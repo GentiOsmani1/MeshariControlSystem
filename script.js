@@ -2166,6 +2166,9 @@ function publishSliderValue(sliderName, value) {
                 const angleRad = animation.currentValue * (Math.PI / 180);
                 console.log(`${label}: ${animation.currentValue.toFixed(1)}° (${angleRad.toFixed(3)} rad)`);
                 rotateFunction(angleRad);
+                
+                // Publish gradual MQTT values during animation
+                publishSliderValue(label.replace(' ', ''), animation.currentValue);
             }
 
             // Continue animation if not at target
@@ -2252,8 +2255,9 @@ function publishSliderValue(sliderName, value) {
         if (resetBtn) {
             resetBtn.addEventListener('click', function () {
                 console.log('Gradually resetting all sliders to 0°');
-
+                
                 // Update animation targets to 0 for all sliders
+                // MQTT values will be published gradually during the animation
                 activeSliders.forEach((slider, index) => {
                     // For SHOULDER slider (index 2), target is 0 (which will reset slider to left position)
                     sliderAnimations[index].targetValue = 0;
