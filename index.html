@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Meshari UI</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="script.js"></script>
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+</head>
+
+<body>
+    <!-- MQTT Connection Status Indicator -->
+    <div id="mqttStatus" style="
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(0,0,0,0.8);
+        color: #ff0000;
+        padding: 10px 20px;
+        border-radius: 5px;
+        font-weight: bold;
+        font-size: 14px;
+        z-index: 1000;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    ">🔴 Disconnected</div>
+    
+    <div class="container">
+        <!-- Column 1 Wrapper -->
+        <div class="column-1-wrapper">
+            <img src="img/logo.png" alt="Logo" class="slider-logo">
+            <div class="section sliders-section">
+                <div class="section-title">
+                    Sliders
+                    <button class="reset-sliders-btn" id="resetSlidersBtn">Reset</button>
+                </div>
+                <div class="slider-wrapper">
+                    <div class="slider-label">Elbow</div>
+                    <input type="range" class="slider" min="0" max="120" value="0" step="0.1">
+                    <span class="slider-value-display">0.0°</span>
+                </div>
+                <div class="slider-wrapper">
+                    <div class="slider-label">Biceps</div>
+                    <input type="range" class="slider" min="-45" max="45" value="0" step="0.1">
+                    <span class="slider-value-display">0.0°</span>
+                </div>
+                <div class="slider-wrapper">
+                    <div class="slider-label">Shoulder</div>
+                    <input type="range" class="slider" min="0" max="90" value="0" step="0.1">
+                    <span class="slider-value-display">0.0°</span>
+                </div>
+                <div class="slider-wrapper">
+                    <div class="slider-label">Shoulder Blade</div>
+                    <input type="range" class="slider" min="-90" max="90" value="0" step="0.1">
+                    <span class="slider-value-display">0.0°</span>
+                </div>
+                <div class="slider-wrapper">
+                    <div class="slider-label">N/A</div>
+                    <input type="range" class="slider" min="0" max="100" value="50" disabled>
+                </div>
+                <div class="slider-wrapper">
+                    <div class="slider-label">N/A</div>
+                    <input type="range" class="slider" min="0" max="100" value="50" disabled>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 2 Wrapper -->
+        <div class="column-2-wrapper">
+            <div class="section fingers-section">
+                <div class="section-title">Open/Close Fingers</div>
+                <div class="fingers-buttons">
+                    <button class="finger-btn">Open Fingers</button>
+                    <button class="finger-btn">Close Fingers</button>
+                </div>
+            </div>
+
+            <div class="section showcase-section">
+                <div class="section-title">Live IsaacSim Showcase window</div>
+                <div class="showcase-window" id="isaacSimWindow">
+                    <div class="axis-indicator">
+                        <div class="axis-label" style="color: #ff0000;">X</div>
+                        <div class="axis-label" style="color: #00ff00;">Y</div>
+                        <div class="axis-label" style="color: #0000ff;">Z</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 3 Wrapper -->
+        <div class="section individual-fingers-section">
+            <div class="section-title">Individual Finger Control</div>
+            <div class="individual-fingers-grid">
+                <button class="individual-finger-btn">Move Index</button>
+                <button class="individual-finger-btn">Move Middle</button>
+                <button class="individual-finger-btn">Move Ring</button>
+                <button class="individual-finger-btn">Move Pinky</button>
+                <button class="individual-finger-btn">Move Thumb</button>
+                <button class="individual-finger-btn">Move Thumb Sideways</button>
+            </div>
+        </div>
+
+        <div class="section movement-section">
+            <div class="section-title">Movement Buttons</div>
+            <div class="movement-grid">
+                <button class="movement-btn">Grab Water</button>
+                <button class="movement-btn">Pour Wanter</button>
+                <button class="movement-btn">Arm Movement</button>
+                <button class="movement-btn">Hello Movement</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
