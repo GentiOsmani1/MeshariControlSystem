@@ -335,7 +335,6 @@ export function registerFingerSegments(segmentsByFinger) {
             normalized.mid ? normalized.mid.name : 'missing-mid',
             normalized.tip ? normalized.tip.name : 'missing-tip'
         ].join(', ');
-        // console.log(`✓ Finger segments registered: ${key} -> [${partNames}]`);
 
     });
 }
@@ -393,7 +392,6 @@ export function applyFingerCurl(fingerKey, shouldCurl, customConfig = {}) {
     if (segments.tip) segments.tip.updateMatrixWorld(true);
 
     fingerCurlState.set(fingerKey, shouldCurl);
-    // console.log(`Finger "${fingerKey}" ${shouldCurl ? 'curled' : 'reset'}.`);
 }
 
 export function toggleFingerCurl(fingerKey, customConfig = {}) {
@@ -476,7 +474,6 @@ export function reparentPreserveWorld(parent, child, label = '') {
     child.updateMatrixWorld(true);
 
     if (label) {
-        // console.log(`✓ ${label} (world preserved)`);
     }
 }
 
@@ -553,11 +550,6 @@ export function findMeshByName(model, partialName) {
         }
     });
 
-    if (!bestMatch) {
-        // console.warn(`findMeshByName("${partialName}") -> NOT FOUND`);
-    } else {
-        // console.log(`findMeshByName("${partialName}") -> ${bestMatch.name}`);
-    }
     return bestMatch;
 }
 
@@ -629,10 +621,6 @@ export function buildFingerHierarchy(model, options = {}) {
         controls.maxPolarAngle = Math.PI / 2; // Prevent camera going below ground
         controls.target.set(0, 1, 0); // Look at arm center
 
-        // console.log('Three.js initialized');
-        // console.log('OrbitControls enabled - use mouse to rotate camera');
-        // console.log('Container size:', container.clientWidth, 'x', container.clientHeight);
-
         // Reduced lighting with shadows
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
         scene.add(ambientLight);
@@ -681,8 +669,6 @@ export function buildFingerHierarchy(model, options = {}) {
             loader.load(
                 filePath,
                 function (gltf) {
-                    // console.log('Model loaded successfully!');
-                    // console.log('GLTF scene:', gltf.scene);
                     model = gltf.scene;
 
                     // Enable shadows, improve materials, and remove base_link, Cube, and mesh_0
@@ -706,7 +692,6 @@ export function buildFingerHierarchy(model, options = {}) {
                             nameLower.includes('platform')) {
                             child.visible = false;
                             hiddenCount++;
-                            // console.log('Hidden object:', name, '(type:', child.type + ')');
 
                             // Also hide all children of this object
                             child.traverse(function (descendant) {
@@ -717,8 +702,6 @@ export function buildFingerHierarchy(model, options = {}) {
                             return;
                         }
                     });
-
-                    // console.log(`Hidden ${hiddenCount} non-arm objects`);
 
                     // Second pass: Setup shadows and materials for visible arm meshes
                     model.traverse(function (child) {
@@ -745,11 +728,9 @@ export function buildFingerHierarchy(model, options = {}) {
                             }
                         }
                     });
-                    // console.log('Total meshes found:', meshCount);
 
                     const box = new THREE.Box3().setFromObject(model);
                     const size = box.getSize(new THREE.Vector3());
-                    // console.log('Model size:', size);
 
                     const maxDim = Math.max(size.x, size.y, size.z);
                     if (maxDim > 0) {
@@ -772,11 +753,6 @@ export function buildFingerHierarchy(model, options = {}) {
 
                     // Update matrix world to ensure model is positioned correctly
                     model.updateMatrixWorld(true);
-                    // console.log('Model added to scene');
-
-                    // STEP 2-5: Correct hierarchy based on GLB analysis
-                    // DISABLED - using original hierarchy setup instead
-                    // correctHierarchyFromGLB(model);
 
                     // Scan GLTF structure to find correct hierarchy
                     const allObjects = [];
@@ -793,12 +769,7 @@ export function buildFingerHierarchy(model, options = {}) {
                         }
                     });
 
-                    // console.log('Total objects found:', allObjects.length);
-                    // console.log('Meshes found (excluding base):', allMeshes.length);
-                    // console.log('Mesh names:', allMeshes.map(m => m.name || 'unnamed'));
-
                     // Log ALL objects (not just meshes) to see the complete structure
-                    // console.log('=== ALL OBJECTS IN MODEL ===');
                     const allObjectsDetailed = [];
                     model.traverse(function (child) {
                         allObjectsDetailed.push({
@@ -811,9 +782,7 @@ export function buildFingerHierarchy(model, options = {}) {
                     });
                     allObjectsDetailed.forEach((obj, index) => {
                         const typeInfo = obj.isMesh ? '[MESH]' : (obj.isBone ? '[BONE]' : `[${obj.type}]`);
-                        // console.log(`${index}: ${typeInfo} "${obj.name}" (parent: "${obj.parent}")`);
                     });
-                    // console.log('=== END OBJECT LIST ===');
 
                     // Log ALL meshes in order with their details
                     // console.log('=== ALL MESHES IN ORDER ===');
@@ -829,13 +798,10 @@ export function buildFingerHierarchy(model, options = {}) {
                             });
                         }
                     });
-                    // console.log(`Total meshes found: ${allMeshesOrdered.length}`);
                     allMeshesOrdered.forEach((mesh, index) => {
-                        // console.log(`  [${index}] "${mesh.name}" (parent: "${mesh.parent}", visible: ${mesh.visible})`);
                     });
 
                     // Extract and categorize mesh names for easier identification
-                    // console.log('=== MESH NAME ANALYSIS ===');
                     const meshCategories = {
                         shoulder: [],
                         biceps: [],
@@ -865,22 +831,6 @@ export function buildFingerHierarchy(model, options = {}) {
                         else meshCategories.other.push(mesh.name);
                     });
 
-                    // console.log('Shoulder meshes:', meshCategories.shoulder.length > 0 ? meshCategories.shoulder : 'NONE FOUND');
-                    // console.log('Biceps meshes:', meshCategories.biceps.length > 0 ? meshCategories.biceps : 'NONE FOUND');
-                    // console.log('Forearm meshes:', meshCategories.forearm.length > 0 ? meshCategories.forearm : 'NONE FOUND');
-                    // console.log('Palm meshes:', meshCategories.palm.length > 0 ? meshCategories.palm : 'NONE FOUND');
-                    // console.log('Index finger meshes:', meshCategories.fingers.index.length > 0 ? meshCategories.fingers.index : 'NONE FOUND');
-                    // console.log('Middle finger meshes:', meshCategories.fingers.middle.length > 0 ? meshCategories.fingers.middle : 'NONE FOUND');
-                    // console.log('Pinky finger meshes:', meshCategories.fingers.pinky.length > 0 ? meshCategories.fingers.pinky : 'NONE FOUND');
-                    // console.log('Ring finger meshes:', meshCategories.fingers.ring.length > 0 ? meshCategories.fingers.ring : 'NONE FOUND');
-                    // console.log('Thumb finger meshes:', meshCategories.fingers.thumb.length > 0 ? meshCategories.fingers.thumb : 'NONE FOUND');
-                    // console.log('Other meshes:', meshCategories.other.length > 0 ? meshCategories.other : 'NONE');
-                    // console.log('=== END MESH LIST ===');
-
-                    // Find joints - try to find parent groups that contain multiple meshes
-                    // Motor3 (Biceps) should be a parent that contains Motor2 (Elbow) and everything below
-
-                    // First, find all parent groups and their children
                     const parentGroups = [];
                     allObjects.forEach(obj => {
                         if ((obj.type === 'Group' || obj.type === 'Bone' || obj.type === 'Object3D') && obj.children.length > 0) {
@@ -900,7 +850,6 @@ export function buildFingerHierarchy(model, options = {}) {
                         }
                     });
 
-                    // console.log('Parent groups found:', parentGroups.length);
                     parentGroups.forEach((pg, idx) => {
                         // console.log(`  Group ${idx}: ${pg.name} (${pg.meshes.length} meshes)`);
                     });
@@ -1009,7 +958,6 @@ export function buildFingerHierarchy(model, options = {}) {
 
                         if (found) {
                             const typeStr = found.isMesh ? 'Mesh' : (found.isBone ? 'Bone' : found.type);
-                            // console.log(`  findMeshByName('${partialName}'): Found ${typeStr} "${found.name}"`);
                         } else {
                             console.warn(`  findMeshByName('${partialName}'): NOT FOUND`);
                             // Log all similar mesh names to help debug
@@ -1024,21 +972,17 @@ export function buildFingerHierarchy(model, options = {}) {
                                 }
                             });
                             if (similarMeshes.length > 0) {
-                                // console.log(`    Similar meshes found:`, similarMeshes);
                             }
                         }
 
                         return found;
                     }
 
-                    // Find all required arm objects
-                    // console.log('=== SEARCHING FOR ARM MESHES ===');
 
                     // CRITICAL: Enhanced search for Shoulder_1 (actual name in GLB: Krahu_1_1)
                     let Shoulder_1 = findMeshByName('Krahu_1_1');  // Primary name (actual mesh name)
                     if (!Shoulder_1) {
                         // Try alternative names
-                        // console.log('Krahu_1_1 not found, trying alternative names for Shoulder_1...');
                         Shoulder_1 = findMeshByName('Krahu') ||
                             findMeshByName('Shoulder_1') ||
                             findMeshByName('Shoulder') ||
@@ -1047,59 +991,39 @@ export function buildFingerHierarchy(model, options = {}) {
                             findMeshByName('Shoulder_Blade') ||
                             findMeshByName('shoulder_blade');
                         if (Shoulder_1) {
-                            // console.log(`  ✓ Found Shoulder_1 with alternative name: "${Shoulder_1.name}"`);
                         }
                     } else {
-                        // console.log(`  ✓ Found Shoulder_1 as Krahu_1_1: "${Shoulder_1.name}"`);
                     }
 
                     // If still not found, search for any mesh with "shoulder" or "krahu" in the name
                     if (!Shoulder_1) {
-                        // console.log('Searching entire model for any shoulder/krahu mesh...');
                         model.traverse((child) => {
                             if (!Shoulder_1 && child.isMesh && child.name) {
                                 const nameLower = child.name.toLowerCase();
                                 if (nameLower.includes('shoulder') || nameLower.includes('shldr') || nameLower.includes('krahu')) {
                                     Shoulder_1 = child;
-                                    // console.log(`  ✓ Found shoulder mesh: "${child.name}"`);
                                 }
                             }
                         });
                     }
 
-                    // console.log('Shoulder_1 (Krahu_1_1):', Shoulder_1 ? `✓✓✓ FOUND (${Shoulder_1.name})` : '✗✗✗ NOT FOUND');
 
                     // Search for Mbajtesi_1 (Shoulder parent/base)
                     let Mbajtesi_1 = findMeshByName('Mbajtesi_1');
                     if (!Mbajtesi_1) {
-                        // console.log('Mbajtesi_1 not found, trying alternative names...');
                         Mbajtesi_1 = findMeshByName('Mbajtesi') ||
                             findMeshByName('mbajtesi_1') ||
                             findMeshByName('mbajtesi');
-                        if (Mbajtesi_1) {
-                            // console.log(`  ✓ Found Mbajtesi_1 with alternative name: "${Mbajtesi_1.name}"`);
-                        }
                     } else {
-                        // console.log(`  ✓ Found Mbajtesi_1: "${Mbajtesi_1.name}"`);
                     }
-                    // console.log('Mbajtesi_1:', Mbajtesi_1 ? `✓✓✓ FOUND (${Mbajtesi_1.name})` : '✗✗✗ NOT FOUND');
 
                     const Biceps_up_1 = findMeshByName('Biceps_up_1');
-                    // console.log('Biceps_up_1:', Biceps_up_1 ? `FOUND (${Biceps_up_1.name})` : 'NOT FOUND');
 
                     const Biceps_low_1 = findMeshByName('Biceps_low_1');
-                    // console.log('Biceps_low_1:', Biceps_low_1 ? `FOUND (${Biceps_low_1.name})` : 'NOT FOUND');
 
                     const Forearm_1 = findMeshByName('Forearm_1');
-                    // console.log('Forearm_1:', Forearm_1 ? `FOUND (${Forearm_1.name})` : 'NOT FOUND');
 
                     const Palm_1 = findMeshByName('Palm_1');
-                    // console.log('Palm_1:', Palm_1 ? `FOUND (${Palm_1.name})` : 'NOT FOUND');
-
-                    // console.log('=== SEARCHING FOR FINGER MESHES ===');
-                    // Search for all finger segments (1, 2, 3 for each finger)
-                    // Segment 1 = closest to palm, Segment 3 = fingertip
-                    // NOTE: Actual GLB names have variations: _1_1 vs _1 suffixes, and "Midle" vs "Middle"
 
                     // INDEX FINGER (parent groups: Index3_1_1, Index2_1_1, Index1_1)
                     const Index3_1 = findMeshByName('Index3_1_1') || findMeshByName('Index3_1');
@@ -1148,32 +1072,23 @@ export function buildFingerHierarchy(model, options = {}) {
                     const foundFingers = Object.entries(fingerResults).filter(([name, obj]) => obj !== null);
                     const missingFingers = Object.entries(fingerResults).filter(([name, obj]) => obj === null);
 
-                    // console.log(`Finger search complete: ${foundFingers.length}/15 found (all 3 segments per finger)`);
                     if (foundFingers.length > 0) {
-                        // console.log('  Found finger parent groups:');
                         foundFingers.forEach(([searchName, obj]) => {
-                            // console.log(`    ✓ ${searchName} -> found as "${obj.name}"`);
                         });
                     }
                     if (missingFingers.length > 0) {
-                        // console.log('  Missing finger parent groups:');
                         missingFingers.forEach(([searchName, obj]) => {
-                            // console.log(`    ✗ ${searchName} - NOT FOUND`);
                         });
                     }
                     // ADDITIONAL: Search for finger parent groups that contain the actual meshes
-                    // console.log('=== VERIFYING FINGER PARENT GROUPS ===');
                     const allFoundFingers = [Index3_1, Index2_1, Index1_1,
                         Middle3_1, Middle2_1, Middle1_1,
                         Pinky3_1, Pinky2_1, Pinky1_1,
                         Ring3_1, Ring2_1, Ring1_1,
                         Thumb3_1, Thumb2_1, Thumb1_1].filter(f => f !== null);
 
-                    // console.log(`Total finger parent groups found: ${allFoundFingers.length}/15`);
                     allFoundFingers.forEach(finger => {
-                        // console.log(`  - ${finger.name} (type: ${finger.type}, has ${finger.children.length} children)`);
                     });
-                    // console.log('=== END ARM MESH SEARCH ===');
 
                     // Log found objects
                     const armObjects = [Mbajtesi_1, Shoulder_1, Biceps_up_1, Biceps_low_1, Forearm_1, Palm_1,
@@ -1182,18 +1097,6 @@ export function buildFingerHierarchy(model, options = {}) {
                         Pinky3_1, Pinky2_1, Pinky1_1,
                         Ring3_1, Ring2_1, Ring1_1,
                         Thumb3_1, Thumb2_1, Thumb1_1];
-                    const foundObjects = armObjects.filter(obj => obj !== null);
-                    // console.log('=== ARM OBJECTS IDENTIFIED ===');
-                    // console.log(`Found ${foundObjects.length} out of ${armObjects.length} required objects`);
-                    const names = ['Mbajtesi_1', 'Shoulder_1', 'Biceps_up_1', 'Biceps_low_1', 'Forearm_1', 'Palm_1',
-                        'Index3_1', 'Index2_1', 'Index1_1',
-                        'Middle3_1', 'Middle2_1', 'Middle1_1',
-                        'Pinky3_1', 'Pinky2_1', 'Pinky1_1',
-                        'Ring3_1', 'Ring2_1', 'Ring1_1',
-                        'Thumb3_1', 'Thumb2_1', 'Thumb1_1'];
-                    armObjects.forEach((obj, idx) => {
-                        // console.log(`${names[idx]}: ${obj ? '✓ FOUND' : '✗ MISSING'}`);
-                    });
 
                     // STEP 2: Preserve current world positions and rotations
                     // Store world matrix of each object to maintain exact placement
@@ -1204,54 +1107,11 @@ export function buildFingerHierarchy(model, options = {}) {
                         if (obj) {
                             obj.updateMatrixWorld();
                             worldMatrices.set(obj, obj.matrixWorld.clone());
-                            // console.log(`Stored world matrix for ${obj.name}`);
                         }
                     });
 
                     // STEP 3 & 4: Establish hierarchical chain using ThreeJS parenting system
-                    // console.log('=== REMOVING FROM CURRENT PARENTS ===');
 
-                    // Remove Mbajtesi_1 from its parent first (new root of hierarchy)
-                    if (Mbajtesi_1) {
-                        const originalParent = Mbajtesi_1.parent;
-                        if (originalParent) {
-                            // console.log(`Removing ${Mbajtesi_1.name} from parent: ${originalParent.name || 'unnamed'}`);
-                            originalParent.remove(Mbajtesi_1);
-                            // console.log(`✓ ${Mbajtesi_1.name} removed from original parent`);
-                        } else {
-                            // console.log(`${Mbajtesi_1.name} has no parent (already orphaned)`);
-                        }
-                    } else {
-                        // console.warn('⚠ Mbajtesi_1 NOT FOUND - will use Shoulder_1 as root');
-                    }
-
-                    // CRITICAL: Remove Shoulder_1 (Krahu_1_1) from its parent
-                    if (Shoulder_1) {
-                        const originalParent = Shoulder_1.parent;
-                        if (originalParent) {
-                            // console.log(`Removing ${Shoulder_1.name} from parent: ${originalParent.name || 'unnamed'}`);
-                            originalParent.remove(Shoulder_1);
-                            // console.log(`✓ ${Shoulder_1.name} removed from original parent`);
-                        } else {
-                            // console.log(`${Shoulder_1.name} has no parent (already orphaned)`);
-                        }
-                    } else {
-                        console.warn('⚠ Shoulder_1 (Krahu_1_1) NOT FOUND - cannot attach to hierarchy');
-                    }
-
-                    if (Biceps_up_1 && Biceps_up_1.parent) {
-                        // console.log(`Removing Biceps_up_1 from parent: ${Biceps_up_1.parent.name || 'unnamed'}`);
-                        Biceps_up_1.parent.remove(Biceps_up_1);
-                    }
-                    if (Biceps_low_1 && Biceps_low_1.parent) {
-                        Biceps_low_1.parent.remove(Biceps_low_1);
-                    }
-                    if (Forearm_1 && Forearm_1.parent) {
-                        Forearm_1.parent.remove(Forearm_1);
-                    }
-                    if (Palm_1 && Palm_1.parent) {
-                        Palm_1.parent.remove(Palm_1);
-                    }
                     // Remove ALL finger parent groups from their current parents
                     const allFingerSegments = [
                         Index3_1, Index2_1, Index1_1,
@@ -1261,116 +1121,52 @@ export function buildFingerHierarchy(model, options = {}) {
                         Thumb3_1, Thumb2_1, Thumb1_1
                     ];
 
-                    // console.log('=== REMOVING FINGER PARENT GROUPS FROM CURRENT PARENTS ===');
-                    allFingerSegments.forEach(finger => {
-                        if (finger && finger.parent) {
-                            // console.log(`  Removing ${finger.name} from parent: ${finger.parent.name || 'unnamed'}`);
-                            finger.parent.remove(finger);
-                        } else if (finger) {
-                            // console.log(`  ${finger.name} has no parent (already orphaned)`);
-                        }
-                    });
-
-                    // Build hierarchy chain (parent -> child relationships)
-                    // HIERARCHICAL PARENTING SYSTEM:
-                    // Biceps_low_1 -> Forearm_1 -> Palm_1 & [ALL finger segments]
-                    // Biceps_up_1 -> Biceps_low_1
-                    // Shoulder_1 -> Biceps_up_1 (if Shoulder_1 exists)
-
                     // Forearm_1 -> Palm_1
                     if (Forearm_1 && Palm_1) {
                         Forearm_1.add(Palm_1);
-                        // console.log('✓ Forearm_1.add(Palm_1)');
                     }
 
                     // Forearm_1 -> ALL finger parent groups (so Elbow moves all fingers including base segments)
-                    // console.log('=== ATTACHING FINGERS TO FOREARM_1 ===');
                     if (Forearm_1) {
                         const fingerSegments = allFingerSegments.filter(f => f !== null);
                         if (fingerSegments.length > 0) {
-                            // console.log(`Attaching ${fingerSegments.length}/15 finger parent groups to Forearm_1:`);
                             fingerSegments.forEach(finger => {
-                                // console.log(`  - ${finger.name}`);
                             });
                             Forearm_1.add(...fingerSegments);
-                            // console.log(`✓✓✓ Forearm_1.add(${fingerSegments.length} finger parent groups) - SUCCESS`);
-                            // console.log(`✓ All finger meshes will now move with elbow, biceps, shoulder, and shoulder blade`);
                         } else {
-                            // console.warn('⚠ No finger parent groups found to attach');
                         }
                     } else {
-                        // console.error('✗ Forearm_1 NOT FOUND - cannot attach fingers!');
                     }
 
                     // Biceps_low_1 -> Forearm_1
                     if (Biceps_low_1 && Forearm_1) {
                         Biceps_low_1.add(Forearm_1);
-                        // console.log('✓ Biceps_low_1.add(Forearm_1)');
                     }
 
                     // Biceps_up_1 -> Biceps_low_1
                     if (Biceps_up_1 && Biceps_low_1) {
                         Biceps_up_1.add(Biceps_low_1);
-                        // console.log('✓ Biceps_up_1.add(Biceps_low_1)');
                     }
-
-                    // CRITICAL: Build hierarchy - Mbajtesi_1 -> Shoulder_1 -> Biceps_up_1
-                    // console.log('=== BUILDING MBAJTESI_1 -> SHOULDER_1 (KRAHU_1_1) HIERARCHY ===');
 
                     // Mbajtesi_1 -> Shoulder_1 (Mbajtesi is the new root)
-                    if (Mbajtesi_1 && Shoulder_1) {
-                        // console.log(`Attaching Shoulder_1 to Mbajtesi_1 (${Mbajtesi_1.name})...`);
-                        Mbajtesi_1.add(Shoulder_1);
-                        // console.log(`✓✓✓ ${Mbajtesi_1.name}.add(${Shoulder_1.name}) - SUCCESS`);
-                        // console.log(`  ${Mbajtesi_1.name}.children.length: ${Mbajtesi_1.children.length}`);
-                        // console.log(`  ${Shoulder_1.name}.parent: ${Shoulder_1.parent ? Shoulder_1.parent.name : 'none'}`);
-                    } else if (!Mbajtesi_1 && Shoulder_1) {
-                        // console.log('⚠ Mbajtesi_1 not found - Shoulder_1 will be root');
-                    } else if (Mbajtesi_1 && !Shoulder_1) {
-                        // console.warn('⚠ Shoulder_1 not found - cannot attach to Mbajtesi_1');
-                    }
 
-                    // Shoulder_1 -> Biceps_up_1 (attach Biceps to Shoulder)
+
                     if (Shoulder_1 && Biceps_up_1) {
-                        // console.log(`Attaching Biceps_up_1 to Shoulder_1 (${Shoulder_1.name})...`);
                         Shoulder_1.add(Biceps_up_1);
-                        // console.log(`✓✓✓ ${Shoulder_1.name}.add(Biceps_up_1) - SUCCESS`);
-                        // console.log(`  ${Shoulder_1.name}.children.length: ${Shoulder_1.children.length}`);
-                        // console.log(`  Biceps_up_1.parent: ${Biceps_up_1.parent ? Biceps_up_1.parent.name : 'none'}`);
-                    } else {
-                        if (!Shoulder_1) {
-                            // console.error('✗ CRITICAL: Shoulder_1 (Krahu_1_1) NOT FOUND - cannot build complete hierarchy');
-                        }
-                        if (!Biceps_up_1) {
-                            // console.error('✗ CRITICAL: Biceps_up_1 NOT FOUND - cannot build complete hierarchy');
-                        }
                     }
-
-                    // Restore world positions by adding root back to scene/model
-                    // Use Mbajtesi_1 as root if available, otherwise use Shoulder_1, otherwise Biceps_up_1
-                    // console.log('=== ADDING ARM ROOT TO SCENE ===');
 
                     // Determine the root of the hierarchy
                     let armRoot = Mbajtesi_1 || Shoulder_1;
 
                     if (Mbajtesi_1) {
-                        // Mbajtesi_1 exists - make it the root of arm hierarchy
-                        // console.log(`${Mbajtesi_1.name} found - adding to model as ROOT...`);
-
                         // Ensure Mbajtesi_1 has no parent before adding to model
                         if (Mbajtesi_1.parent && Mbajtesi_1.parent !== model && Mbajtesi_1.parent !== scene) {
-                            // console.log(`Removing ${Mbajtesi_1.name} from unexpected parent: ${Mbajtesi_1.parent.name || 'unnamed'}`);
                             Mbajtesi_1.parent.remove(Mbajtesi_1);
                         }
 
                         // Add Mbajtesi_1 to model if not already in scene hierarchy
                         if (!Mbajtesi_1.parent) {
                             model.add(Mbajtesi_1);
-                            // console.log(`✓✓✓ ${Mbajtesi_1.name} SUCCESSFULLY added to model (ROOT of arm hierarchy)`);
-                            // console.log(`  ${Mbajtesi_1.name}.parent: ${Mbajtesi_1.parent ? Mbajtesi_1.parent.name || Mbajtesi_1.parent.type : 'none'}`);
-                            // console.log(`  ${Mbajtesi_1.name}.visible: ${Mbajtesi_1.visible}`);
-                        } else {
-                            // console.log(`✓ ${Mbajtesi_1.name} already has parent:`, Mbajtesi_1.parent.name || Mbajtesi_1.parent.type);
                         }
 
                         // Verify Mbajtesi_1 is in the scene graph
@@ -1387,28 +1183,15 @@ export function buildFingerHierarchy(model, options = {}) {
                             if (current) path.push(current.name || current.type);
                             depth++;
                         }
-                        // console.log(`  ${Mbajtesi_1.name} in scene graph: ${isInScene ? '✓ YES' : '✗ NO'}`);
-                        if (isInScene) {
-                            // console.log(`  Path to scene: ${path.reverse().join(' -> ')}`);
-                        }
                     } else if (Shoulder_1) {
-                        // Mbajtesi_1 not found, use Shoulder_1 as root
-                        // console.log(`${Shoulder_1.name} found - adding to model as ROOT (Mbajtesi_1 not found)...`);
-
                         // Ensure Shoulder_1 has no parent before adding to model
                         if (Shoulder_1.parent && Shoulder_1.parent !== model && Shoulder_1.parent !== scene) {
-                            // console.log(`Removing ${Shoulder_1.name} from unexpected parent: ${Shoulder_1.parent.name || 'unnamed'}`);
                             Shoulder_1.parent.remove(Shoulder_1);
                         }
 
                         // Add Shoulder_1 to model if not already in scene hierarchy
                         if (!Shoulder_1.parent) {
                             model.add(Shoulder_1);
-                            // console.log(`✓✓✓ ${Shoulder_1.name} SUCCESSFULLY added to model (ROOT of arm hierarchy)`);
-                            // console.log(`  ${Shoulder_1.name}.parent: ${Shoulder_1.parent ? Shoulder_1.parent.name || Shoulder_1.parent.type : 'none'}`);
-                            // console.log(`  ${Shoulder_1.name}.visible: ${Shoulder_1.visible}`);
-                        } else {
-                            // console.log(`✓ ${Shoulder_1.name} already has parent:`, Shoulder_1.parent.name || Shoulder_1.parent.type);
                         }
 
                         // Verify Shoulder_1 is in the scene graph
@@ -1425,30 +1208,22 @@ export function buildFingerHierarchy(model, options = {}) {
                                 break;
                             }
                         }
-                        // console.log(`  ${Shoulder_1.name} in scene graph: ${isInScene ? '✓ YES' : '✗ NO'}`);
-                        if (isInScene) {
-                            // console.log(`  Path: ${path.reverse().join(' -> ')}`);
-                        }
 
                     } else if (Biceps_up_1) {
                         // Shoulder_1 (Krahu_1_1) not found - use Biceps_up_1 as root
                         console.warn('⚠ Shoulder_1 (Krahu_1_1) NOT FOUND - using Biceps_up_1 as ROOT');
                         if (!Biceps_up_1.parent) {
                             model.add(Biceps_up_1);
-                            // console.log('⚠ Biceps_up_1 added to model as ROOT');
-                            // console.log('⚠ Shoulder Blade slider will not function without Shoulder_1 (Krahu_1_1)');
                         }
                     } else if (Biceps_low_1) {
                         console.warn('⚠⚠ Only Biceps_low_1 found (Shoulder_1/Krahu_1_1 missing)');
                         if (!Biceps_low_1.parent) {
                             model.add(Biceps_low_1);
-                            // console.log('⚠⚠ Biceps_low_1 added to model as ROOT');
                         }
                     } else if (Forearm_1) {
                         console.warn('⚠⚠⚠ Only Forearm_1 found (Shoulder_1/Krahu_1_1 missing)');
                         if (!Forearm_1.parent) {
                             model.add(Forearm_1);
-                            // console.log('⚠⚠⚠ Forearm_1 added to model as ROOT');
                         }
                     }
 
@@ -1529,132 +1304,28 @@ export function buildFingerHierarchy(model, options = {}) {
                     // Final update to ensure all matrices are synchronized
                     model.updateMatrixWorld(true);
 
-                    // CRITICAL: Final verification for Mbajtesi_1 and Shoulder_1
-                    // console.log('=== MBAJTESI_1 FINAL VERIFICATION ===');
-                    // if (Mbajtesi_1) {
-                    //     console.log('Mbajtesi_1 status:');
-                    //     console.log(`  Name: ${Mbajtesi_1.name}`);
-                    //     console.log(`  Type: ${Mbajtesi_1.type}`);
-                    //     console.log(`  Is Mesh: ${Mbajtesi_1.isMesh}`);
-                    //     console.log(`  Visible: ${Mbajtesi_1.visible}`);
-                    //     console.log(`  Parent: ${Mbajtesi_1.parent ? (Mbajtesi_1.parent.name || Mbajtesi_1.parent.type) : 'NONE'}`);
-                    //     console.log(`  Children count: ${Mbajtesi_1.children.length}`);
-                    //     console.log(`  Children names: [${Mbajtesi_1.children.map(c => c.name || 'unnamed').join(', ')}]`);
-                    //     console.log(`  Rotation (x,y,z): (${Mbajtesi_1.rotation.x.toFixed(3)}, ${Mbajtesi_1.rotation.y.toFixed(3)}, ${Mbajtesi_1.rotation.z.toFixed(3)})`);
-
-                    //     // Ensure Mbajtesi_1 is visible
-                    //     if (!Mbajtesi_1.visible) {
-                    //         Mbajtesi_1.visible = true;
-                    //         console.log('  ✓ Forced Mbajtesi_1 to visible');
-                    //     }
-                    // } else {
-                    //     console.log('⚠ Mbajtesi_1 not found in model');
-                    // }
-
-                    // console.log('=== SHOULDER_1 (KRAHU_1_1) FINAL VERIFICATION ===');
-                    // if (Shoulder_1) {
-                    //     console.log('Shoulder_1 (Krahu_1_1) status:');
-                    //     console.log(`  Name: ${Shoulder_1.name}`);
-                    //     console.log(`  Type: ${Shoulder_1.type}`);
-                    //     console.log(`  Is Mesh: ${Shoulder_1.isMesh}`);
-                    //     console.log(`  Visible: ${Shoulder_1.visible}`);
-                    //     console.log(`  Parent: ${Shoulder_1.parent ? (Shoulder_1.parent.name || Shoulder_1.parent.type) : 'NONE'}`);
-                    //     console.log(`  Children count: ${Shoulder_1.children.length}`);
-                    //     console.log(`  Children names: [${Shoulder_1.children.map(c => c.name || 'unnamed').join(', ')}]`);
-                    //     console.log(`  Rotation (x,y,z): (${Shoulder_1.rotation.x.toFixed(3)}, ${Shoulder_1.rotation.y.toFixed(3)}, ${Shoulder_1.rotation.z.toFixed(3)})`);
-
-                    //     // Ensure Shoulder_1 is visible
-                    //     if (!Shoulder_1.visible) {
-                    //         Shoulder_1.visible = true;
-                    //         console.log('  ✓ Forced Shoulder_1 to visible');
-                    //     }
-
-                    //     // Verify Shoulder_1 has Biceps_up_1 as child
-                    //     if (Biceps_up_1 && Shoulder_1.children.includes(Biceps_up_1)) {
-                    //         console.log('  ✓✓✓ Biceps_up_1 IS child of Shoulder_1 - hierarchy correct!');
-                    //     } else if (Biceps_up_1) {
-                    //         console.error('  ✗✗✗ Biceps_up_1 is NOT child of Shoulder_1 - hierarchy BROKEN!');
-                    //         console.log('  Attempting to fix...');
-                    //         if (Biceps_up_1.parent) Biceps_up_1.parent.remove(Biceps_up_1);
-                    //         Shoulder_1.add(Biceps_up_1);
-                    //         model.updateMatrixWorld(true);
-                    //         console.log('  ✓ Fixed: Biceps_up_1 now child of Shoulder_1');
-                    //     }
-
-                    //     // Check if Shoulder_1 is reachable from scene
-                    //     let depth = 0;
-                    //     let current = Shoulder_1;
-                    //     let path = [Shoulder_1.name || 'Shoulder_1'];
-                    //     while (current.parent && depth < 10) {
-                    //         current = current.parent;
-                    //         path.push(current.name || current.type);
-                    //         depth++;
-                    //         if (current === scene) {
-                    //             console.log(`  ✓ Shoulder_1 is in scene graph (depth: ${depth})`);
-                    //             console.log(`  Path: ${path.reverse().join(' -> ')}`);
-                    //             break;
-                    //         }
-                    //     }
-                    //     if (current !== scene) {
-                    //         console.error('  ✗ Shoulder_1 is NOT in scene graph!');
-                    //         console.log('  Current path:', path.reverse().join(' -> '));
-                    //     }
-                    // } else {
-                    //     console.error('✗✗✗ Shoulder_1 is NULL - was never found in the model!');
-                    //     console.log('Searching entire model for any shoulder-like objects...');
-                    //     const possibleShoulders = [];
-                    //     model.traverse((child) => {
-                    //         if (child.name && child.name.toLowerCase().includes('shoulder')) {
-                    //             possibleShoulders.push({
-                    //                 name: child.name,
-                    //                 type: child.type,
-                    //                 isMesh: child.isMesh
-                    //             });
-                    //         }
-                    //     });
-                    //     console.log('Possible shoulder objects found:', possibleShoulders);
-                    // }
-                    // console.log('=== END SHOULDER_1 VERIFICATION ===');
-
                     // VERIFICATION: Check finger attachments
-                    // console.log('=== FINGER ATTACHMENT VERIFICATION ===');
                     if (Forearm_1) {
                         const attachedFingers = allFingerSegments.filter(f => f !== null && f.parent === Forearm_1);
                         const detachedFingers = allFingerSegments.filter(f => f !== null && f.parent !== Forearm_1);
 
-                        // console.log(`Fingers attached to Forearm_1: ${attachedFingers.length}/${allFingerSegments.filter(f => f !== null).length}`);
-
-                        if (attachedFingers.length > 0) {
-                            // console.log('  ✓ Attached finger parent groups:');
-                            // attachedFingers.forEach(f => console.log(`    - ${f.name} (children: ${f.children.length})`));
-                        }
-
                         if (detachedFingers.length > 0) {
-                            // console.error('  ✗ DETACHED finger parent groups (NOT moving with arm):');
                             detachedFingers.forEach(f => {
                                 console.error(`    - ${f.name} (parent: ${f.parent ? f.parent.name : 'none'})`);
                                 // Try to re-attach
                                 if (f.parent) f.parent.remove(f);
                                 Forearm_1.add(f);
-                                // console.log(`    ✓ Re-attached ${f.name} to Forearm_1`);
                             });
                         }
 
-                        // console.log(`Total finger parent groups in hierarchy: ${attachedFingers.length + detachedFingers.length}`);
-                    } else {
-                        // console.error('✗ Forearm_1 not found - cannot verify finger attachments');
                     }
-                    // console.log('=== END FINGER VERIFICATION ===');
 
                     // VERIFICATION: Check complete hierarchy
-                    // console.log('=== HIERARCHY VERIFICATION ===');
                     function printHierarchy(obj, indent = 0) {
                         const prefix = '  '.repeat(indent);
                         const name = obj.name || 'unnamed';
                         const type = obj.isMesh ? '[MESH]' : obj.isBone ? '[BONE]' : `[${obj.type}]`;
-                        // console.log(`${prefix}${type} ${name}`);
                         obj.children.forEach(child => {
-                            // Only print arm-related children
                             if (child.name && (
                                 child.name.includes('Shoulder') ||
                                 child.name.includes('Biceps') ||
@@ -1671,20 +1342,6 @@ export function buildFingerHierarchy(model, options = {}) {
                         });
                     }
 
-                    if (Shoulder_1) {
-                        // console.log('Complete arm hierarchy starting from Shoulder_1:');
-                        printHierarchy(Shoulder_1);
-                    } else if (Biceps_up_1) {
-                        // console.log('Complete arm hierarchy starting from Biceps_up_1:');
-                        printHierarchy(Biceps_up_1);
-                    } else if (Biceps_low_1) {
-                        // console.log('Complete arm hierarchy starting from Biceps_low_1:');
-                        printHierarchy(Biceps_low_1);
-                    } else if (Forearm_1) {
-                        // console.log('Complete arm hierarchy starting from Forearm_1:');
-                        // printHierarchy(Forearm_1);
-                    }
-
                     // Count visible meshes
                     let visibleArmMeshes = 0;
                     model.traverse((child) => {
@@ -1692,8 +1349,6 @@ export function buildFingerHierarchy(model, options = {}) {
                             visibleArmMeshes++;
                         }
                     });
-                    // console.log(`Total visible arm meshes in scene: ${visibleArmMeshes}`);
-                    // console.log('=== END HIERARCHY VERIFICATION ===');
 
                     // Assign motors to the actual mesh objects (not groups)
                     // These will be used by the slider rotation functions
@@ -1710,8 +1365,6 @@ export function buildFingerHierarchy(model, options = {}) {
                         if (name === 'base_link' || name.toLowerCase().includes('base_link') || name.toLowerCase().includes('baselink')) {
                             child.visible = false;
                             baseLinkFound = true;
-                            // console.log('✓ base_link hidden:', name);
-                            // Hide all its children too
                             child.traverse(function (desc) {
                                 if (desc !== child) desc.visible = false;
                             });
@@ -1719,16 +1372,11 @@ export function buildFingerHierarchy(model, options = {}) {
                         if (name === 'Cube' || name.toLowerCase() === 'cube') {
                             child.visible = false;
                             cubeFound = true;
-                            // console.log('✓ Cube hidden:', name);
-                            // Hide all its children too
                             child.traverse(function (desc) {
                                 if (desc !== child) desc.visible = false;
                             });
                         }
                     });
-                    // if (!baseLinkFound) console.log('⚠ base_link not found in model (might already be removed)');
-                    // if (!cubeFound) console.log('⚠ Cube not found in model (might already be removed)');
-                    // console.log('=== END VISIBILITY CHECK ===');
 
                     // Initialize the biomechanical arm joint system
                     // This sets up the hierarchical joint control for natural arm movement
@@ -1738,7 +1386,6 @@ export function buildFingerHierarchy(model, options = {}) {
                 },
                 function (xhr) {
                     if (xhr.lengthComputable) {
-                        // console.log((xhr.loaded / xhr.total * 100) + '% loaded');
                     }
                 },
                 function (error) {
@@ -1812,7 +1459,6 @@ export function buildFingerHierarchy(model, options = {}) {
                 // Try exact match first
                 if (childName === name || nameLower === searchLower) {
                     found = child;
-                    // console.log(`Found exact match for ${name}: ${childName}`);
                     return;
                 }
 
@@ -1820,7 +1466,6 @@ export function buildFingerHierarchy(model, options = {}) {
                 if (nameLower.includes(searchLower) || searchLower.includes(nameLower)) {
                     if (!found) { // Only take first match
                         found = child;
-                        // console.log(`Found partial match for ${name}: ${childName}`);
                     }
                 }
             });
@@ -1844,8 +1489,6 @@ export function buildFingerHierarchy(model, options = {}) {
                 console.warn('⚠ Model not loaded - cannot initialize arm joint system');
                 return false;
             }
-
-            // console.log('=== INITIALIZING ARM JOINT SYSTEM ===');
 
             // First try to use the motor assignments if available
             if (motors.motor4) armJoints.shoulderBlade = motors.motor4;  // motor4 = Biceps_up_1
@@ -1882,7 +1525,6 @@ export function buildFingerHierarchy(model, options = {}) {
                         y: joint.rotation.y,
                         z: joint.rotation.z
                     });
-                    // console.log(`✓ ${jointKey} joint (${displayNames[index]}): FOUND - ${joint.name}`);
                 } else {
                     console.warn(`✗ ${jointKey} joint (${displayNames[index]}): MISSING`);
                     allFound = false;
@@ -1890,7 +1532,6 @@ export function buildFingerHierarchy(model, options = {}) {
             });
 
             // Verify hierarchy is correct by checking parent-child relationships
-            // console.log('=== VERIFYING HIERARCHY ===');
 
             // Check if Mbajtesi_1 exists and verify it's the parent of Shoulder_1
             let mbajtesiFound = false;
@@ -1898,11 +1539,6 @@ export function buildFingerHierarchy(model, options = {}) {
                 model.traverse((child) => {
                     if (child.name === 'Mbajtesi_1' || child.name === 'Mbajtesi') {
                         mbajtesiFound = true;
-                        if (armJoints.shoulder && child.children.includes(armJoints.shoulder)) {
-                            // console.log('✓ Mbajtesi_1 -> Shoulder_1 (correct)');
-                        } else if (armJoints.shoulder) {
-                            // console.log(`ℹ Mbajtesi_1 found but Shoulder_1 parent is: ${armJoints.shoulder.parent ? armJoints.shoulder.parent.name : 'none'}`);
-                        }
                     }
                 });
             }
@@ -1913,7 +1549,6 @@ export function buildFingerHierarchy(model, options = {}) {
             // Check Shoulder_1 -> Biceps_up_1
             if (armJoints.shoulder && armJoints.shoulderBlade) {
                 if (armJoints.shoulderBlade.parent === armJoints.shoulder) {
-                    // console.log('✓ Shoulder_1 -> Biceps_up_1 (correct)');
                 } else {
                     console.warn('✗ Shoulder_1 -> Biceps_up_1 (incorrect, fixing...)');
                     // Try to fix the hierarchy
@@ -1921,7 +1556,6 @@ export function buildFingerHierarchy(model, options = {}) {
                         armJoints.shoulderBlade.parent.remove(armJoints.shoulderBlade);
                     }
                     armJoints.shoulder.add(armJoints.shoulderBlade);
-                    // console.log('✓ Fixed: Shoulder_1 -> Biceps_up_1');
                 }
             } else {
                 if (!armJoints.shoulder) {
@@ -1974,9 +1608,6 @@ export function buildFingerHierarchy(model, options = {}) {
             // Update world matrices after any hierarchy fixes
             model.updateMatrixWorld(true);
 
-            // console.log('=== HIERARCHY VERIFICATION COMPLETE ===');
-
-            // console.log(allFound ? '=== ARM JOINT SYSTEM READY ===' : '=== ARM JOINT SYSTEM INCOMPLETE ===');
             return allFound;
         }
 
@@ -2008,12 +1639,6 @@ export function buildFingerHierarchy(model, options = {}) {
 
             // Apply rotation to Shoulder_1's X-axis (spins like a wheel)
             shoulderJoint.rotation.x = shoulderInitial.x + angle;
-
-            // Debug: Log rotation change
-            if (Math.abs(angle) > 0.01) {
-                // console.log(`  Shoulder_1 rotation.x: ${shoulderInitial.x.toFixed(3)} → ${shoulderJoint.rotation.x.toFixed(3)} (Δ: ${angle.toFixed(3)} rad)`);
-                // console.log(`  Arm spinning like a wheel on X-axis`);
-            }
 
             // Update Shoulder_1 matrices to propagate to all children
             shoulderJoint.updateMatrixWorld(true);
@@ -2155,7 +1780,6 @@ export function buildFingerHierarchy(model, options = {}) {
             // Apply rotation
             if (ensureArmSystemInitialized()) {
                 const angleRad = animation.currentValue * (Math.PI / 180);
-                // console.log(`${label}: ${animation.currentValue.toFixed(1)}° (${angleRad.toFixed(3)} rad)`);
                 rotateFunction(angleRad);
 
                 // Publish gradual MQTT values during animation
