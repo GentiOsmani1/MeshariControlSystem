@@ -5,6 +5,24 @@ import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examp
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/controls/OrbitControls.js';
 
 // ============================================
+// CONSOLE WARNING SUPPRESSION
+// ============================================
+// Suppress meshopt_decoder warnings permanently
+const originalWarn = console.warn;
+console.warn = function (...args) {
+    // Check if this is the meshopt_decoder warning
+    if (args.length > 0 && typeof args[0] === 'string' &&
+        args[0].includes('meshopt_decoder') &&
+        args[0].includes('experimental SIMD')) {
+        // Suppress this specific warning
+        return;
+    }
+    // Pass through all other warnings
+    originalWarn.apply(console, args);
+};
+
+
+// ============================================
 // MQTT CONNECTION SETUP
 // ============================================
 
@@ -26,23 +44,23 @@ let mqttClient = null;
 function connectMQTT() {
     try {
         mqttClient = mqtt.connect(MQTT_CONFIG.host, MQTT_CONFIG.options);
-        
+
         mqttClient.on('connect', () => {
             console.log('✅ Connected to HiveMQ Cloud');
             updateConnectionStatus(true);
         });
-        
+
         mqttClient.on('close', () => {
             console.log('❌ Disconnected from HiveMQ Cloud');
             updateConnectionStatus(false);
         });
-        
+
         mqttClient.on('error', (err) => {
             console.error('❌ MQTT Connection Error:', err.message || err);
             updateConnectionStatus(false);
             // Don't let MQTT errors stop the script - arm should still load
         });
-        
+
     } catch (error) {
         console.error('❌ Failed to initialize MQTT:', error.message || error);
         updateConnectionStatus(false);
@@ -73,26 +91,507 @@ setTimeout(() => {
     }
 }, 100);
 
-// Function to publish slider values to MQTT broker
-function publishSliderValue(sliderName, value) {
+// ============================================
+// MQTT PUBLISHING FUNCTIONS
+// ============================================
+
+// Function to publish joint values to MQTT broker (unified for both sliders and buttons)
+function publishJointValue(jointName, value, isRadians = true) {
     if (!mqttClient || !mqttClient.connected) {
         console.log('⚠️ Not connected to MQTT broker');
         return;
     }
-    
-    // Convert degrees to radians
-    const valueInRadians = value * (Math.PI / 180);
-    
-    // Send as: "Elbow", "0.7854"
-    const message = '"' + sliderName + '", "' + valueInRadians.toFixed(4) + '"';
-    
+
+    let valueToSend;
+
+    if (isRadians) {
+        // For sliders: convert degrees to radians
+        const valueInRadians = value * (Math.PI / 180);
+        valueToSend = valueInRadians.toFixed(4);
+    } else {
+        // For buttons: send the value directly (180 or 0)
+        valueToSend = value.toString();
+    }
+
+    // Send as: "JointName", "value"
+    const message = '"' + jointName + '", "' + valueToSend + '"';
+
     mqttClient.publish(
         'meshari/sliders',              // Topic name
         message,                        // Message payload (plain string)
         { qos: 0 }                      // Quality of Service
     );
-    
+
     console.log('📤 Published to MQTT:', message);
+}
+
+function publishSliderValue(sliderName, value) {
+    // Call the unified function with isRadians = true
+    publishJointValue(sliderName, value, true);
+}
+
+function setupFingerButtons() {
+    const fingerButtons = document.querySelectorAll('.individual-finger-btn');
+
+    // Finger mapping to MQTT joint names
+    const fingerMap = {
+        'Move Index': 'IndexFinger',
+        'Move Middle': 'MiddleFinger',
+        'Move Ring': 'RingFinger',
+        'Move Pinky': 'PinkyFinger',
+        'Move Thumb': 'ThumbUpDown',
+        'Move Thumb Sideways': 'ThumbSideways'
+    };
+
+    // Track finger states for toggle functionality
+    const fingerStates = new Map();
+
+    fingerButtons.forEach(button => {
+        const fingerName = button.textContent;
+        const jointName = fingerMap[fingerName];
+
+        if (!jointName) {
+            // console.error('Unknown finger button:', fingerName);
+            return;
+        }
+
+        // Initialize state
+        fingerStates.set(jointName, 0);
+
+        button.addEventListener('click', function () {
+            // Toggle between 180 and 0 degrees
+            const currentState = fingerStates.get(jointName) || 0;
+            const newValue = currentState === 180 ? 0 : 180;
+
+            // Update state
+            fingerStates.set(jointName, newValue);
+
+            // Send the value (isRadians = false because we're sending degrees)
+            publishJointValue(jointName, newValue, false);
+
+            // Visual feedback
+            this.classList.toggle('active', newValue === 180);
+
+            console.log('👆 Finger button pressed:', jointName, newValue + '°');
+        });
+    });
+
+    // console.log('✓ Finger buttons setup complete');
+
+    // NEW: Add Open/Close All buttons functionality
+    setupOpenCloseButtons(fingerMap, fingerStates);
+}
+
+function setupOpenCloseButtons(fingerMap, fingerStates) {
+    // Find buttons by their text content
+    const allButtons = document.querySelectorAll('.finger-btn');
+    let openAllBtn = null;
+    let closeAllBtn = null;
+
+    // Find buttons based on their text
+    allButtons.forEach(button => {
+        const text = button.textContent.trim();
+        if (text === 'Open Fingers') {
+            openAllBtn = button;
+        } else if (text === 'Close Fingers') {
+            closeAllBtn = button;
+        }
+    });
+
+    if (!openAllBtn || !closeAllBtn) {
+        console.warn('Open/Close All buttons not found in the HTML');
+        return;
+    }
+
+    // Get all joint names from fingerMap (excluding thumb sideways for simplicity)
+    const fingerJointNames = Object.values(fingerMap).filter(name => name !== 'ThumbSideways');
+
+    openAllBtn.addEventListener('click', function () {
+        console.log('👐 Opening all fingers (0°)');
+
+        fingerJointNames.forEach(jointName => {
+            // Update state to 0 (open)
+            fingerStates.set(jointName, 0);
+
+            // Send MQTT value (isRadians = false because we're sending degrees)
+            publishJointValue(jointName, 0, false);
+
+            console.log(`  Sent ${jointName}: 0°`);
+        });
+
+        // Update individual finger button visual states
+        updateIndividualButtonStates(fingerStates, fingerMap);
+
+        this.classList.add('active');
+        closeAllBtn.classList.remove('active');
+    });
+
+    closeAllBtn.addEventListener('click', function () {
+        console.log('🤏 Closing all fingers (180°)');
+
+        fingerJointNames.forEach(jointName => {
+            // Update state to 180 (closed)
+            fingerStates.set(jointName, 180);
+
+            // Send MQTT value (isRadians = false because we're sending degrees)
+            publishJointValue(jointName, 180, false);
+
+            console.log(`  Sent ${jointName}: 180°`);
+        });
+
+        // Update individual finger button visual states
+        updateIndividualButtonStates(fingerStates, fingerMap);
+
+        this.classList.add('active');
+        openAllBtn.classList.remove('active');
+    });
+
+    // console.log('✓ Open/Close All buttons setup complete');
+}
+// HELPER FUNCTION: Update individual finger button visual states
+function updateIndividualButtonStates(fingerStates, fingerMap) {
+    const fingerButtons = document.querySelectorAll('.individual-finger-btn');
+
+    fingerButtons.forEach(button => {
+        const fingerName = button.textContent;
+        const jointName = fingerMap[fingerName];
+
+        if (jointName && fingerStates.has(jointName)) {
+            const state = fingerStates.get(jointName);
+            button.classList.toggle('active', state === 180);
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(() => {
+        setupFingerButtons();
+    }, 500); // Small delay to ensure UI is ready
+});
+
+// ------------------------------------------------------------
+// Finger positioning + curling logic (shared across the app)
+// ------------------------------------------------------------
+
+export const fingerSegmentsMap = new Map();        // key -> { base, mid, tip }
+const segmentInitialRotations = new WeakMap();     // mesh -> { x, y, z }
+const segmentInitialQuaternions = new WeakMap();   // mesh -> quaternion
+const fingerCurlState = new Map();                 // key -> boolean
+
+export const fingerCurlConfig = {
+    default: { axis: 'y', angles: [0, 0, 0] },
+    index: { axis: 'y', angles: [90, 90, 80] },
+    middle: { axis: 'y', angles: [90, 90, 80] },
+    ring: { axis: 'y', angles: [85, 85, 70] },
+    pinky: { axis: 'y', angles: [80, 95, 60] },
+    thumb: { axis: 'x', angles: [-50, -40, -30] }
+};
+
+export function rememberInitialRotation(segment) {
+    if (!segment) return;
+    if (!segmentInitialRotations.has(segment)) {
+        segmentInitialRotations.set(segment, {
+            x: segment.rotation.x,
+            y: segment.rotation.y,
+            z: segment.rotation.z
+        });
+    }
+    if (!segmentInitialQuaternions.has(segment)) {
+        segmentInitialQuaternions.set(segment, segment.quaternion.clone());
+    }
+}
+
+export function resetSegmentState(segment) {
+    if (!segment) return;
+    segmentInitialRotations.delete(segment);
+    segmentInitialQuaternions.delete(segment);
+}
+
+export function registerFingerSegments(segmentsByFinger) {
+    Object.entries(segmentsByFinger).forEach(([key, parts]) => {
+        if (!parts || !parts.base) {
+            console.warn(`✗ Finger "${key}" missing base segment - cannot register.`);
+            return;
+        }
+
+        const normalized = {
+            base: parts.base || null,
+            mid: parts.mid || null,
+            tip: parts.tip || null
+        };
+
+        fingerSegmentsMap.set(key, normalized);
+        [normalized.base, normalized.mid, normalized.tip].forEach(segment => {
+            if (!segment) return;
+            resetSegmentState(segment);
+            rememberInitialRotation(segment);
+        });
+
+        if (!fingerCurlState.has(key)) {
+            fingerCurlState.set(key, false);
+        }
+
+        const partNames = [
+            normalized.base ? normalized.base.name : 'missing-base',
+            normalized.mid ? normalized.mid.name : 'missing-mid',
+            normalized.tip ? normalized.tip.name : 'missing-tip'
+        ].join(', ');
+        // console.log(`✓ Finger segments registered: ${key} -> [${partNames}]`);
+
+    });
+}
+
+export function applyFingerCurl(fingerKey, shouldCurl, customConfig = {}) {
+    const segments = fingerSegmentsMap.get(fingerKey);
+    if (!segments) {
+        console.warn(`Finger "${fingerKey}" not registered - skipping curl.`);
+        return;
+    }
+
+    const configSource = fingerCurlConfig[fingerKey] || fingerCurlConfig.default;
+    const config = {
+        axis: (customConfig.axis || configSource.axis || fingerCurlConfig.default.axis).toLowerCase(),
+        angles: customConfig.angles || configSource.angles || fingerCurlConfig.default.angles
+    };
+
+    const segmentList = [segments.base, segments.mid, segments.tip];
+    const axisVec = new THREE.Vector3();
+    axisVec[config.axis] = 1;  // Unit vector along the axis
+
+    segmentList.forEach((segment, idx) => {
+        if (!segment) return;
+
+        rememberInitialRotation(segment);
+        const initialQuat = segmentInitialQuaternions.get(segment);
+        if (!initialQuat) {
+            console.warn(`Initial quaternion missing for ${segment.name}`);
+            return;
+        }
+
+        const targetDeg = shouldCurl
+            ? (config.angles[idx] ?? config.angles[config.angles.length - 1] ?? 0)
+            : 0;
+        const radians = THREE.MathUtils.degToRad(targetDeg);
+
+        segment.quaternion.copy(initialQuat);
+
+        const curlQuat = new THREE.Quaternion().setFromAxisAngle(axisVec, radians);
+        segment.quaternion.premultiply(curlQuat);  // Apply curl rotation in local space
+
+        segment.updateMatrixWorld(true);
+
+        if (segment.parent) {
+            segment.parent.updateMatrixWorld(true);
+        }
+    });
+
+    // update full chain
+    if (segments.base && segments.base.parent) {
+        segments.base.parent.updateMatrixWorld(true);
+    }
+    if (segments.base) segments.base.updateMatrixWorld(true);
+    if (segments.mid) segments.mid.updateMatrixWorld(true);
+    if (segments.tip) segments.tip.updateMatrixWorld(true);
+
+    fingerCurlState.set(fingerKey, shouldCurl);
+    // console.log(`Finger "${fingerKey}" ${shouldCurl ? 'curled' : 'reset'}.`);
+}
+
+export function toggleFingerCurl(fingerKey, customConfig = {}) {
+    const shouldCurl = !(fingerCurlState.get(fingerKey) || false);
+    applyFingerCurl(fingerKey, shouldCurl, customConfig);
+}
+
+export function resetAllFingers() {
+    fingerSegmentsMap.forEach((_segments, key) => {
+        applyFingerCurl(key, false);
+    });
+}
+
+// ------------------------------------------------------------
+// Hand hierarchy discovery + repair logic
+// ------------------------------------------------------------
+
+const fingerNameCandidates = {
+    index: {
+        base: ['Index1_1', 'Index1_1_1', 'Index1'],
+        mid: ['Index2_1', 'Index2_1_1', 'Index2'],
+        tip: ['Index3_1', 'Index3_1_1', 'Index3']
+    },
+    middle: {
+        base: ['Midle1_1', 'Midle1_1_1', 'Midle1'],
+        mid: ['Midle2_1', 'Midle2_1_1', 'Midle2'],
+        tip: ['Midle3_1', 'Midle3_1_1', 'Midle3']
+    },
+    ring: {
+        base: ['Ring3_1', 'Ring3_1_1', 'Ring3'],
+        mid: ['Ring2_1', 'Ring2_1_1', 'Ring2'],
+        tip: ['Ring1_1', 'Ring1_1_1', 'Ring1']
+    },
+    pinky: {
+        base: ['Pinky3_1', 'Pinky3_1_1', 'Pinky3'],
+        mid: ['Pinky2_1', 'Pinky2_1_1', 'Pinky2'],
+        tip: ['Pinky1_1', 'Pinky1_1_1', 'Pinky1']
+    },
+    thumb: {
+        base: ['Thumb3_1', 'Thumb3_1_1', 'Thumb3'],
+        mid: ['Thumb2_1', 'Thumb2_1_1', 'Thumb2'],
+        tip: ['Thumb1_1', 'Thumb1_1_1', 'Thumb1']
+    }
+};
+
+const reparentTemp = {
+    worldMatrix: new THREE.Matrix4(),
+    parentInverse: new THREE.Matrix4(),
+    localMatrix: new THREE.Matrix4(),
+    position: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion(),
+    scale: new THREE.Vector3()
+};
+
+export function reparentPreserveWorld(parent, child, label = '') {
+    if (!parent || !child || child.parent === parent) return;
+    if (wouldCreateCycle(parent, child)) {
+        console.warn(`Skipping ${label || 'reparent'} - would create cycle`);
+        return;
+    }
+
+    const { worldMatrix, parentInverse, localMatrix, position, quaternion, scale } = reparentTemp;
+
+    child.updateMatrixWorld(true);
+    parent.updateMatrixWorld(true);
+
+    worldMatrix.copy(child.matrixWorld);
+    parentInverse.copy(parent.matrixWorld).invert();
+    localMatrix.multiplyMatrices(parentInverse, worldMatrix);
+    localMatrix.decompose(position, quaternion, scale);
+
+    if (child.parent) {
+        child.parent.remove(child);
+    }
+    parent.add(child);
+
+    child.position.copy(position);
+    child.quaternion.copy(quaternion);
+    child.scale.copy(scale);
+    child.updateMatrixWorld(true);
+
+    if (label) {
+        // console.log(`✓ ${label} (world preserved)`);
+    }
+}
+
+export function enforceFingerHierarchy(segments, label = '') {
+    if (!segments || !segments.base) return;
+
+    const { base, mid, tip } = segments;
+    if (mid) {
+        reparentPreserveWorld(base, mid, `${label} mid -> base`);
+    }
+    if (tip) {
+        reparentPreserveWorld(mid || base, tip, `${label} tip -> ${mid ? 'mid' : 'base'}`);
+    }
+}
+
+export function wouldCreateCycle(parent, child) {
+    if (!parent || !child) return false;
+    let current = parent;
+    while (current) {
+        if (current === child) return true;
+        current = current.parent || null;
+    }
+    return false;
+}
+
+export function resolveFingerSegments(model) {
+    const groups = {};
+    Object.entries(fingerNameCandidates).forEach(([finger, parts]) => {
+        groups[finger] = {
+            base: findSegment(model, parts.base),
+            mid: findSegment(model, parts.mid),
+            tip: findSegment(model, parts.tip)
+        };
+
+        ['base', 'mid', 'tip'].forEach(part => {
+            if (!groups[finger][part]) {
+                console.warn(`Finger "${finger}" missing ${part} segment.`);
+            }
+        });
+    });
+    return groups;
+}
+
+function findSegment(model, candidates) {
+    for (const candidate of candidates) {
+        const found = findMeshByName(model, candidate);
+        if (found) return found;
+    }
+    return null;
+}
+
+export function findMeshByName(model, partialName) {
+    let bestMatch = null;
+    let bestScore = Infinity;
+    let bestTypeRank = Infinity;
+
+    const exactLower = partialName.toLowerCase();
+
+    model.traverse(child => {
+        if (!child.name) return;
+        const childLower = child.name.toLowerCase();
+        let score = null;
+        if (child.name === partialName) score = 0;
+        else if (childLower === exactLower) score = 1;
+        else if (childLower.includes(exactLower)) score = 2;
+        else if (exactLower.includes(childLower)) score = 3;
+
+        if (score === null) return;
+        const typeRank = child.isMesh ? 0 : (child.isBone ? 1 : 2);
+        if (score < bestScore || (score === bestScore && typeRank < bestTypeRank)) {
+            bestMatch = child;
+            bestScore = score;
+            bestTypeRank = typeRank;
+        }
+    });
+
+    if (!bestMatch) {
+        // console.warn(`findMeshByName("${partialName}") -> NOT FOUND`);
+    } else {
+        // console.log(`findMeshByName("${partialName}") -> ${bestMatch.name}`);
+    }
+    return bestMatch;
+}
+
+export function ensurePalm(model, explicitPalmName = 'Palm_1') {
+    let palm = findMeshByName(model, explicitPalmName);
+    if (!palm) {
+        palm = findMeshByName(model, 'Palm');
+    }
+    if (!palm) {
+        throw new Error('Palm mesh not found. Provide explicit palm reference.');
+    }
+    return palm;
+}
+
+export function buildFingerHierarchy(model, options = {}) {
+    if (!model) throw new Error('Model not provided to buildFingerHierarchy');
+
+    const palm = options.palm || ensurePalm(model, options.palmName || 'Palm_1');
+    const segmentGroups = resolveFingerSegments(model);
+
+    Object.entries(segmentGroups).forEach(([label, segments]) => {
+        if (!segments || !segments.base) return;
+        enforceFingerHierarchy(segments, label);
+        reparentPreserveWorld(palm, segments.base, `${label} base -> ${palm.name}`);
+    });
+
+    // prime initial rotations for curling logic
+    Object.values(segmentGroups).forEach(parts => {
+        Object.values(parts).forEach(segment => rememberInitialRotation(segment));
+    });
+
+    registerFingerSegments(segmentGroups);
+    return segmentGroups;
 }
 
 (function () {
@@ -131,9 +630,9 @@ function publishSliderValue(sliderName, value) {
         controls.maxPolarAngle = Math.PI / 2; // Prevent camera going below ground
         controls.target.set(0, 1, 0); // Look at arm center
 
-        console.log('Three.js initialized');
-        console.log('OrbitControls enabled - use mouse to rotate camera');
-        console.log('Container size:', container.clientWidth, 'x', container.clientHeight);
+        // console.log('Three.js initialized');
+        // console.log('OrbitControls enabled - use mouse to rotate camera');
+        // console.log('Container size:', container.clientWidth, 'x', container.clientHeight);
 
         // Reduced lighting with shadows
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
@@ -212,15 +711,15 @@ function publishSliderValue(sliderName, value) {
             });
 
             // Log the analysis
-            console.log('=== GLB HIERARCHY ANALYSIS ===');
-            console.log(`Found ${jointMap.size} arm-related objects`);
+            // console.log('=== GLB HIERARCHY ANALYSIS ===');
+            // console.log(`Found ${jointMap.size} arm-related objects`);
             jointMap.forEach((joint, name) => {
-                console.log(`  ${name}:`);
-                console.log(`    Type: ${joint.type}`);
-                console.log(`    Parent: ${joint.parent || 'ROOT'}`);
-                console.log(`    Children: [${joint.children.join(', ') || 'none'}]`);
+                // console.log(`  ${name}:`);
+                // console.log(`    Type: ${joint.type}`);
+                // console.log(`    Parent: ${joint.parent || 'ROOT'}`);
+                // console.log(`    Children: [${joint.children.join(', ') || 'none'}]`);
             });
-            console.log('=== END HIERARCHY ANALYSIS ===');
+            // console.log('=== END HIERARCHY ANALYSIS ===');
 
             return jointMap;
         }
@@ -274,17 +773,17 @@ function publishSliderValue(sliderName, value) {
                 }
             });
 
-            console.log(`=== CORRECTING HIERARCHY FOR ${armObjects.length} OBJECTS ===`);
+            // console.log(`=== CORRECTING HIERARCHY FOR ${armObjects.length} OBJECTS ===`);
 
             // Log all arm objects found for debugging
-            console.log('Arm objects found:', armObjects.map(obj => ({
-                name: obj.name || 'unnamed',
-                type: obj.type,
-                isMesh: obj.isMesh,
-                isBone: obj.isBone,
-                visible: obj.visible,
-                parent: obj.parent ? (obj.parent.name || 'unnamed') : 'none'
-            })));
+            // console.log('Arm objects found:', armObjects.map(obj => ({
+            // name: obj.name || 'unnamed',
+            // type: obj.type,
+            // isMesh: obj.isMesh,
+            // isBone: obj.isBone,
+            // visible: obj.visible,
+            // parent: obj.parent ? (obj.parent.name || 'unnamed') : 'none'
+            // })));
 
             // Also log ALL meshes in the scene to ensure nothing is missed
             const allMeshes = [];
@@ -297,8 +796,8 @@ function publishSliderValue(sliderName, value) {
                     });
                 }
             });
-            console.log(`Total meshes in scene: ${allMeshes.length}`);
-            console.log('All meshes:', allMeshes);
+            // console.log(`Total meshes in scene: ${allMeshes.length}`);
+            // console.log('All meshes:', allMeshes);
 
             // Find objects by name (prefer meshes, but also check bones/groups)
             // Uses flexible matching to handle name variations
@@ -316,14 +815,14 @@ function publishSliderValue(sliderName, value) {
                 // Try partial match (contains)
                 found = armObjects.find(obj => obj.name && obj.name.toLowerCase().includes(nameLower));
                 if (found) {
-                    console.log(`Found ${name} as partial match: "${found.name}"`);
+                    // console.log(`Found ${name} as partial match: "${found.name}"`);
                     return found;
                 }
 
                 // Try reverse partial match (name contains search term)
                 found = armObjects.find(obj => obj.name && nameLower.includes(obj.name.toLowerCase()));
                 if (found) {
-                    console.log(`Found ${name} as reverse partial match: "${found.name}"`);
+                    // console.log(`Found ${name} as reverse partial match: "${found.name}"`);
                     return found;
                 }
 
@@ -344,14 +843,14 @@ function publishSliderValue(sliderName, value) {
                     // Partial match (object name contains search term)
                     if (objNameLower.includes(nameLower)) {
                         result = object;
-                        console.log(`Found ${name} in scene as partial match: "${object.name}"`);
+                        // console.log(`Found ${name} in scene as partial match: "${object.name}"`);
                         return;
                     }
 
                     // Reverse partial match (search term contains object name)
                     if (nameLower.includes(objNameLower) && objNameLower.length > 3) {
                         result = object;
-                        console.log(`Found ${name} in scene as reverse partial match: "${object.name}"`);
+                        // console.log(`Found ${name} in scene as reverse partial match: "${object.name}"`);
                         return;
                     }
                 });
@@ -366,7 +865,7 @@ function publishSliderValue(sliderName, value) {
                         }
                     });
                     if (similarNames.length > 0) {
-                        console.log(`  Similar names found:`, similarNames);
+                        // console.log(`  Similar names found:`, similarNames);
                     }
                 }
 
@@ -391,7 +890,7 @@ function publishSliderValue(sliderName, value) {
                 if (bicepsUp.parent) bicepsUp.parent.remove(bicepsUp);
                 if (shoulder) {
                     shoulder.add(bicepsUp);
-                    console.log('✓ Shoulder_1 -> Biceps_up_1');
+                    // console.log('✓ Shoulder_1 -> Biceps_up_1');
                 }
             }
 
@@ -399,7 +898,7 @@ function publishSliderValue(sliderName, value) {
                 if (bicepsLow.parent) bicepsLow.parent.remove(bicepsLow);
                 if (bicepsUp) {
                     bicepsUp.add(bicepsLow);
-                    console.log('✓ Biceps_up_1 -> Biceps_low_1');
+                    // console.log('✓ Biceps_up_1 -> Biceps_low_1');
                 }
             }
 
@@ -407,7 +906,7 @@ function publishSliderValue(sliderName, value) {
                 if (forearm.parent) forearm.parent.remove(forearm);
                 if (bicepsLow) {
                     bicepsLow.add(forearm);
-                    console.log('✓ Biceps_low_1 -> Forearm_1');
+                    // console.log('✓ Biceps_low_1 -> Forearm_1');
                 }
             }
 
@@ -415,72 +914,39 @@ function publishSliderValue(sliderName, value) {
                 if (palm.parent) palm.parent.remove(palm);
                 if (forearm) {
                     forearm.add(palm);
-                    console.log('✓ Forearm_1 -> Palm_1');
+                    // console.log('✓ Forearm_1 -> Palm_1');
                 }
             }
 
-            // Parent all finger segments to palm (all 3 segments per finger)
-            const fingerNames = [
-                'Index3_1', 'Index2_1', 'Index1_1',
-                'Middle3_1', 'Middle2_1', 'Middle1_1',
-                'Pinky3_1', 'Pinky2_1', 'Pinky1_1',
-                'Ring3_1', 'Ring2_1', 'Ring1_1',
-                'Thumb3_1', 'Thumb2_1', 'Thumb1_1'
-            ];
-            const fingerObjects = [];
-            const foundFingers = [];
-            const missingFingers = [];
-
-            console.log('=== SEARCHING FOR FINGER OBJECTS ===');
-            fingerNames.forEach(fingerName => {
-                const finger = findObjectByName(fingerName);
-                if (finger) {
-                    foundFingers.push({ searched: fingerName, found: finger.name, object: finger });
-                    if (palm && finger.parent !== palm) {
-                        // Make sure we have the world matrix stored before reparenting
-                        if (!worldMatrices.has(finger)) {
-                            finger.updateMatrixWorld();
-                            worldMatrices.set(finger, finger.matrixWorld.clone());
-                        }
-                        if (finger.parent) finger.parent.remove(finger);
-                        palm.add(finger);
-                        fingerObjects.push(finger);
-                        console.log(`✓ Found and parented ${fingerName} (actual name: "${finger.name}") to Palm_1`);
-                    } else if (!palm) {
-                        console.warn(`⚠ Found ${fingerName} but Palm_1 is missing`);
-                    } else {
-                        console.log(`✓ ${fingerName} already parented to Palm_1`);
-                        fingerObjects.push(finger);
-                    }
-                } else {
-                    missingFingers.push(fingerName);
-                }
-            });
-
-            console.log(`=== FINGER SEARCH RESULTS ===`);
-            console.log(`Found: ${foundFingers.length}/${fingerNames.length} fingers`);
-            foundFingers.forEach(f => console.log(`  ✓ ${f.searched} -> "${f.found}"`));
-            if (missingFingers.length > 0) {
-                console.log(`Missing: ${missingFingers.length} fingers:`, missingFingers);
-                // Try to find any objects with similar names
-                missingFingers.forEach(missingName => {
-                    const searchTerm = missingName.toLowerCase().replace(/_/g, '').substring(0, 5);
-                    const similar = [];
-                    glbScene.traverse((object) => {
-                        if (object.name && object.name.toLowerCase().includes(searchTerm)) {
-                            similar.push(object.name);
-                        }
+            // Build finger hierarchy using new hierarchy code
+            // console.log('=== BUILDING FINGER HIERARCHY ===');
+            let fingerObjects = [];
+            if (palm) {
+                try {
+                    // Store world matrices for finger segments before reparenting (if not already stored)
+                    // This ensures the restore code later works correctly
+                    // We need to resolve segments first to store their matrices
+                    const segmentGroups = resolveFingerSegments(glbScene);
+                    Object.values(segmentGroups).forEach(parts => {
+                        [parts.base, parts.mid, parts.tip].forEach(segment => {
+                            if (segment && !worldMatrices.has(segment)) {
+                                segment.updateMatrixWorld();
+                                worldMatrices.set(segment, segment.matrixWorld.clone());
+                            }
+                            if (segment) fingerObjects.push(segment);
+                        });
                     });
-                    if (similar.length > 0) {
-                        console.log(`  Similar to ${missingName}:`, similar);
-                    }
-                });
-            }
 
-            if (fingerObjects.length > 0) {
-                console.log(`✓ Palm_1 -> ${fingerObjects.length} finger segments`);
-            } else if (palm) {
-                console.warn(`⚠ No finger segments found to parent to Palm_1`);
+                    // Now build the hierarchy (it will use reparentPreserveWorld which preserves world transforms)
+                    // The restore code later will also restore from worldMatrices, which should be idempotent
+                    buildFingerHierarchy(glbScene, { palm: palm });
+                    // console.log(`✓ Built finger hierarchy with ${fingerObjects.length} finger segments`);
+                } catch (error) {
+                    // console.error('Error building finger hierarchy:', error);
+                    // console.warn(`⚠ Finger hierarchy build failed, continuing without fingers`);
+                }
+            } else {
+                // console.warn(`⚠ Palm_1 not found - cannot build finger hierarchy`);
             }
 
             // Log warnings for missing objects
@@ -496,7 +962,7 @@ function publishSliderValue(sliderName, value) {
             armObjects.forEach(obj => {
                 if (!reparentedObjects.has(obj) && !obj.parent) {
                     // Object was removed from parent but not reparented - add back to scene
-                    console.warn(`⚠ Arm object "${obj.name || 'unnamed'}" has no parent - adding to scene root`);
+                    // console.warn(`⚠ Arm object "${obj.name || 'unnamed'}" has no parent - adding to scene root`);
                     glbScene.add(obj);
                 }
             });
@@ -504,7 +970,7 @@ function publishSliderValue(sliderName, value) {
             // Add root back to scene if needed (only if it's not already in the scene)
             if (shoulder && !shoulder.parent && !glbScene.children.includes(shoulder)) {
                 glbScene.add(shoulder);
-                console.log('✓ Shoulder_1 added to scene root');
+                // console.log('✓ Shoulder_1 added to scene root');
             }
 
             // Restore world positions by calculating local transforms relative to new parents
@@ -571,12 +1037,12 @@ function publishSliderValue(sliderName, value) {
                     }
                 }
             });
-            console.log(`✓ Visibility check: ${visibleMeshes}/${totalMeshes} meshes visible`);
+            // console.log(`✓ Visibility check: ${visibleMeshes}/${totalMeshes} meshes visible`);
 
             // Final update to ensure all matrices are synchronized
             glbScene.updateMatrixWorld(true);
 
-            console.log('=== HIERARCHY CORRECTION COMPLETE ===');
+            // console.log('=== HIERARCHY CORRECTION COMPLETE ===');
         }
 
         function loadGLTFModel(filePath) {
@@ -585,8 +1051,8 @@ function publishSliderValue(sliderName, value) {
             loader.load(
                 filePath,
                 function (gltf) {
-                    console.log('Model loaded successfully!');
-                    console.log('GLTF scene:', gltf.scene);
+                    // console.log('Model loaded successfully!');
+                    // console.log('GLTF scene:', gltf.scene);
                     model = gltf.scene;
 
                     // STEP 1: Analyze existing GLB hierarchy (optional - for debugging)
@@ -614,7 +1080,7 @@ function publishSliderValue(sliderName, value) {
                             nameLower.includes('platform')) {
                             child.visible = false;
                             hiddenCount++;
-                            console.log('Hidden object:', name, '(type:', child.type + ')');
+                            // console.log('Hidden object:', name, '(type:', child.type + ')');
 
                             // Also hide all children of this object
                             child.traverse(function (descendant) {
@@ -626,7 +1092,7 @@ function publishSliderValue(sliderName, value) {
                         }
                     });
 
-                    console.log(`Hidden ${hiddenCount} non-arm objects`);
+                    // console.log(`Hidden ${hiddenCount} non-arm objects`);
 
                     // Second pass: Setup shadows and materials for visible arm meshes
                     model.traverse(function (child) {
@@ -653,11 +1119,11 @@ function publishSliderValue(sliderName, value) {
                             }
                         }
                     });
-                    console.log('Total meshes found:', meshCount);
+                    // console.log('Total meshes found:', meshCount);
 
                     const box = new THREE.Box3().setFromObject(model);
                     const size = box.getSize(new THREE.Vector3());
-                    console.log('Model size:', size);
+                    // console.log('Model size:', size);
 
                     const maxDim = Math.max(size.x, size.y, size.z);
                     if (maxDim > 0) {
@@ -680,7 +1146,7 @@ function publishSliderValue(sliderName, value) {
 
                     // Update matrix world to ensure model is positioned correctly
                     model.updateMatrixWorld(true);
-                    console.log('Model added to scene');
+                    // console.log('Model added to scene');
 
                     // STEP 2-5: Correct hierarchy based on GLB analysis
                     // DISABLED - using original hierarchy setup instead
@@ -701,12 +1167,12 @@ function publishSliderValue(sliderName, value) {
                         }
                     });
 
-                    console.log('Total objects found:', allObjects.length);
-                    console.log('Meshes found (excluding base):', allMeshes.length);
-                    console.log('Mesh names:', allMeshes.map(m => m.name || 'unnamed'));
+                    // console.log('Total objects found:', allObjects.length);
+                    // console.log('Meshes found (excluding base):', allMeshes.length);
+                    // console.log('Mesh names:', allMeshes.map(m => m.name || 'unnamed'));
 
                     // Log ALL objects (not just meshes) to see the complete structure
-                    console.log('=== ALL OBJECTS IN MODEL ===');
+                    // console.log('=== ALL OBJECTS IN MODEL ===');
                     const allObjectsDetailed = [];
                     model.traverse(function (child) {
                         allObjectsDetailed.push({
@@ -719,12 +1185,12 @@ function publishSliderValue(sliderName, value) {
                     });
                     allObjectsDetailed.forEach((obj, index) => {
                         const typeInfo = obj.isMesh ? '[MESH]' : (obj.isBone ? '[BONE]' : `[${obj.type}]`);
-                        console.log(`${index}: ${typeInfo} "${obj.name}" (parent: "${obj.parent}")`);
+                        // console.log(`${index}: ${typeInfo} "${obj.name}" (parent: "${obj.parent}")`);
                     });
-                    console.log('=== END OBJECT LIST ===');
+                    // console.log('=== END OBJECT LIST ===');
 
                     // Log ALL meshes in order with their details
-                    console.log('=== ALL MESHES IN ORDER ===');
+                    // console.log('=== ALL MESHES IN ORDER ===');
                     const allMeshesOrdered = [];
                     model.traverse(function (child) {
                         if (child.isMesh) {
@@ -737,13 +1203,13 @@ function publishSliderValue(sliderName, value) {
                             });
                         }
                     });
-                    console.log(`Total meshes found: ${allMeshesOrdered.length}`);
+                    // console.log(`Total meshes found: ${allMeshesOrdered.length}`);
                     allMeshesOrdered.forEach((mesh, index) => {
-                        console.log(`  [${index}] "${mesh.name}" (parent: "${mesh.parent}", visible: ${mesh.visible})`);
+                        // console.log(`  [${index}] "${mesh.name}" (parent: "${mesh.parent}", visible: ${mesh.visible})`);
                     });
 
                     // Extract and categorize mesh names for easier identification
-                    console.log('=== MESH NAME ANALYSIS ===');
+                    // console.log('=== MESH NAME ANALYSIS ===');
                     const meshCategories = {
                         shoulder: [],
                         biceps: [],
@@ -773,17 +1239,17 @@ function publishSliderValue(sliderName, value) {
                         else meshCategories.other.push(mesh.name);
                     });
 
-                    console.log('Shoulder meshes:', meshCategories.shoulder.length > 0 ? meshCategories.shoulder : 'NONE FOUND');
-                    console.log('Biceps meshes:', meshCategories.biceps.length > 0 ? meshCategories.biceps : 'NONE FOUND');
-                    console.log('Forearm meshes:', meshCategories.forearm.length > 0 ? meshCategories.forearm : 'NONE FOUND');
-                    console.log('Palm meshes:', meshCategories.palm.length > 0 ? meshCategories.palm : 'NONE FOUND');
-                    console.log('Index finger meshes:', meshCategories.fingers.index.length > 0 ? meshCategories.fingers.index : 'NONE FOUND');
-                    console.log('Middle finger meshes:', meshCategories.fingers.middle.length > 0 ? meshCategories.fingers.middle : 'NONE FOUND');
-                    console.log('Pinky finger meshes:', meshCategories.fingers.pinky.length > 0 ? meshCategories.fingers.pinky : 'NONE FOUND');
-                    console.log('Ring finger meshes:', meshCategories.fingers.ring.length > 0 ? meshCategories.fingers.ring : 'NONE FOUND');
-                    console.log('Thumb finger meshes:', meshCategories.fingers.thumb.length > 0 ? meshCategories.fingers.thumb : 'NONE FOUND');
-                    console.log('Other meshes:', meshCategories.other.length > 0 ? meshCategories.other : 'NONE');
-                    console.log('=== END MESH LIST ===');
+                    // console.log('Shoulder meshes:', meshCategories.shoulder.length > 0 ? meshCategories.shoulder : 'NONE FOUND');
+                    // console.log('Biceps meshes:', meshCategories.biceps.length > 0 ? meshCategories.biceps : 'NONE FOUND');
+                    // console.log('Forearm meshes:', meshCategories.forearm.length > 0 ? meshCategories.forearm : 'NONE FOUND');
+                    // console.log('Palm meshes:', meshCategories.palm.length > 0 ? meshCategories.palm : 'NONE FOUND');
+                    // console.log('Index finger meshes:', meshCategories.fingers.index.length > 0 ? meshCategories.fingers.index : 'NONE FOUND');
+                    // console.log('Middle finger meshes:', meshCategories.fingers.middle.length > 0 ? meshCategories.fingers.middle : 'NONE FOUND');
+                    // console.log('Pinky finger meshes:', meshCategories.fingers.pinky.length > 0 ? meshCategories.fingers.pinky : 'NONE FOUND');
+                    // console.log('Ring finger meshes:', meshCategories.fingers.ring.length > 0 ? meshCategories.fingers.ring : 'NONE FOUND');
+                    // console.log('Thumb finger meshes:', meshCategories.fingers.thumb.length > 0 ? meshCategories.fingers.thumb : 'NONE FOUND');
+                    // console.log('Other meshes:', meshCategories.other.length > 0 ? meshCategories.other : 'NONE');
+                    // console.log('=== END MESH LIST ===');
 
                     // Find joints - try to find parent groups that contain multiple meshes
                     // Motor3 (Biceps) should be a parent that contains Motor2 (Elbow) and everything below
@@ -808,9 +1274,9 @@ function publishSliderValue(sliderName, value) {
                         }
                     });
 
-                    console.log('Parent groups found:', parentGroups.length);
+                    // console.log('Parent groups found:', parentGroups.length);
                     parentGroups.forEach((pg, idx) => {
-                        console.log(`  Group ${idx}: ${pg.name} (${pg.meshes.length} meshes)`);
+                        // console.log(`  Group ${idx}: ${pg.name} (${pg.meshes.length} meshes)`);
                     });
 
                     // Find Motor3 (Biceps) - should contain Motor2 (Elbow) mesh
@@ -917,7 +1383,7 @@ function publishSliderValue(sliderName, value) {
 
                         if (found) {
                             const typeStr = found.isMesh ? 'Mesh' : (found.isBone ? 'Bone' : found.type);
-                            console.log(`  findMeshByName('${partialName}'): Found ${typeStr} "${found.name}"`);
+                            // console.log(`  findMeshByName('${partialName}'): Found ${typeStr} "${found.name}"`);
                         } else {
                             console.warn(`  findMeshByName('${partialName}'): NOT FOUND`);
                             // Log all similar mesh names to help debug
@@ -932,7 +1398,7 @@ function publishSliderValue(sliderName, value) {
                                 }
                             });
                             if (similarMeshes.length > 0) {
-                                console.log(`    Similar meshes found:`, similarMeshes);
+                                // console.log(`    Similar meshes found:`, similarMeshes);
                             }
                         }
 
@@ -940,13 +1406,13 @@ function publishSliderValue(sliderName, value) {
                     }
 
                     // Find all required arm objects
-                    console.log('=== SEARCHING FOR ARM MESHES ===');
+                    // console.log('=== SEARCHING FOR ARM MESHES ===');
 
                     // CRITICAL: Enhanced search for Shoulder_1 (actual name in GLB: Krahu_1_1)
                     let Shoulder_1 = findMeshByName('Krahu_1_1');  // Primary name (actual mesh name)
                     if (!Shoulder_1) {
                         // Try alternative names
-                        console.log('Krahu_1_1 not found, trying alternative names for Shoulder_1...');
+                        // console.log('Krahu_1_1 not found, trying alternative names for Shoulder_1...');
                         Shoulder_1 = findMeshByName('Krahu') ||
                             findMeshByName('Shoulder_1') ||
                             findMeshByName('Shoulder') ||
@@ -955,56 +1421,56 @@ function publishSliderValue(sliderName, value) {
                             findMeshByName('Shoulder_Blade') ||
                             findMeshByName('shoulder_blade');
                         if (Shoulder_1) {
-                            console.log(`  ✓ Found Shoulder_1 with alternative name: "${Shoulder_1.name}"`);
+                            // console.log(`  ✓ Found Shoulder_1 with alternative name: "${Shoulder_1.name}"`);
                         }
                     } else {
-                        console.log(`  ✓ Found Shoulder_1 as Krahu_1_1: "${Shoulder_1.name}"`);
+                        // console.log(`  ✓ Found Shoulder_1 as Krahu_1_1: "${Shoulder_1.name}"`);
                     }
 
                     // If still not found, search for any mesh with "shoulder" or "krahu" in the name
                     if (!Shoulder_1) {
-                        console.log('Searching entire model for any shoulder/krahu mesh...');
+                        // console.log('Searching entire model for any shoulder/krahu mesh...');
                         model.traverse((child) => {
                             if (!Shoulder_1 && child.isMesh && child.name) {
                                 const nameLower = child.name.toLowerCase();
                                 if (nameLower.includes('shoulder') || nameLower.includes('shldr') || nameLower.includes('krahu')) {
                                     Shoulder_1 = child;
-                                    console.log(`  ✓ Found shoulder mesh: "${child.name}"`);
+                                    // console.log(`  ✓ Found shoulder mesh: "${child.name}"`);
                                 }
                             }
                         });
                     }
 
-                    console.log('Shoulder_1 (Krahu_1_1):', Shoulder_1 ? `✓✓✓ FOUND (${Shoulder_1.name})` : '✗✗✗ NOT FOUND');
+                    // console.log('Shoulder_1 (Krahu_1_1):', Shoulder_1 ? `✓✓✓ FOUND (${Shoulder_1.name})` : '✗✗✗ NOT FOUND');
 
                     // Search for Mbajtesi_1 (Shoulder parent/base)
                     let Mbajtesi_1 = findMeshByName('Mbajtesi_1');
                     if (!Mbajtesi_1) {
-                        console.log('Mbajtesi_1 not found, trying alternative names...');
+                        // console.log('Mbajtesi_1 not found, trying alternative names...');
                         Mbajtesi_1 = findMeshByName('Mbajtesi') ||
                             findMeshByName('mbajtesi_1') ||
                             findMeshByName('mbajtesi');
                         if (Mbajtesi_1) {
-                            console.log(`  ✓ Found Mbajtesi_1 with alternative name: "${Mbajtesi_1.name}"`);
+                            // console.log(`  ✓ Found Mbajtesi_1 with alternative name: "${Mbajtesi_1.name}"`);
                         }
                     } else {
-                        console.log(`  ✓ Found Mbajtesi_1: "${Mbajtesi_1.name}"`);
+                        // console.log(`  ✓ Found Mbajtesi_1: "${Mbajtesi_1.name}"`);
                     }
-                    console.log('Mbajtesi_1:', Mbajtesi_1 ? `✓✓✓ FOUND (${Mbajtesi_1.name})` : '✗✗✗ NOT FOUND');
+                    // console.log('Mbajtesi_1:', Mbajtesi_1 ? `✓✓✓ FOUND (${Mbajtesi_1.name})` : '✗✗✗ NOT FOUND');
 
                     const Biceps_up_1 = findMeshByName('Biceps_up_1');
-                    console.log('Biceps_up_1:', Biceps_up_1 ? `FOUND (${Biceps_up_1.name})` : 'NOT FOUND');
+                    // console.log('Biceps_up_1:', Biceps_up_1 ? `FOUND (${Biceps_up_1.name})` : 'NOT FOUND');
 
                     const Biceps_low_1 = findMeshByName('Biceps_low_1');
-                    console.log('Biceps_low_1:', Biceps_low_1 ? `FOUND (${Biceps_low_1.name})` : 'NOT FOUND');
+                    // console.log('Biceps_low_1:', Biceps_low_1 ? `FOUND (${Biceps_low_1.name})` : 'NOT FOUND');
 
                     const Forearm_1 = findMeshByName('Forearm_1');
-                    console.log('Forearm_1:', Forearm_1 ? `FOUND (${Forearm_1.name})` : 'NOT FOUND');
+                    // console.log('Forearm_1:', Forearm_1 ? `FOUND (${Forearm_1.name})` : 'NOT FOUND');
 
                     const Palm_1 = findMeshByName('Palm_1');
-                    console.log('Palm_1:', Palm_1 ? `FOUND (${Palm_1.name})` : 'NOT FOUND');
+                    // console.log('Palm_1:', Palm_1 ? `FOUND (${Palm_1.name})` : 'NOT FOUND');
 
-                    console.log('=== SEARCHING FOR FINGER MESHES ===');
+                    // console.log('=== SEARCHING FOR FINGER MESHES ===');
                     // Search for all finger segments (1, 2, 3 for each finger)
                     // Segment 1 = closest to palm, Segment 3 = fingertip
                     // NOTE: Actual GLB names have variations: _1_1 vs _1 suffixes, and "Midle" vs "Middle"
@@ -1056,32 +1522,32 @@ function publishSliderValue(sliderName, value) {
                     const foundFingers = Object.entries(fingerResults).filter(([name, obj]) => obj !== null);
                     const missingFingers = Object.entries(fingerResults).filter(([name, obj]) => obj === null);
 
-                    console.log(`Finger search complete: ${foundFingers.length}/15 found (all 3 segments per finger)`);
+                    // console.log(`Finger search complete: ${foundFingers.length}/15 found (all 3 segments per finger)`);
                     if (foundFingers.length > 0) {
-                        console.log('  Found finger parent groups:');
+                        // console.log('  Found finger parent groups:');
                         foundFingers.forEach(([searchName, obj]) => {
-                            console.log(`    ✓ ${searchName} -> found as "${obj.name}"`);
+                            // console.log(`    ✓ ${searchName} -> found as "${obj.name}"`);
                         });
                     }
                     if (missingFingers.length > 0) {
-                        console.log('  Missing finger parent groups:');
+                        // console.log('  Missing finger parent groups:');
                         missingFingers.forEach(([searchName, obj]) => {
-                            console.log(`    ✗ ${searchName} - NOT FOUND`);
+                            // console.log(`    ✗ ${searchName} - NOT FOUND`);
                         });
                     }
                     // ADDITIONAL: Search for finger parent groups that contain the actual meshes
-                    console.log('=== VERIFYING FINGER PARENT GROUPS ===');
+                    // console.log('=== VERIFYING FINGER PARENT GROUPS ===');
                     const allFoundFingers = [Index3_1, Index2_1, Index1_1,
                         Middle3_1, Middle2_1, Middle1_1,
                         Pinky3_1, Pinky2_1, Pinky1_1,
                         Ring3_1, Ring2_1, Ring1_1,
                         Thumb3_1, Thumb2_1, Thumb1_1].filter(f => f !== null);
 
-                    console.log(`Total finger parent groups found: ${allFoundFingers.length}/15`);
+                    // console.log(`Total finger parent groups found: ${allFoundFingers.length}/15`);
                     allFoundFingers.forEach(finger => {
-                        console.log(`  - ${finger.name} (type: ${finger.type}, has ${finger.children.length} children)`);
+                        // console.log(`  - ${finger.name} (type: ${finger.type}, has ${finger.children.length} children)`);
                     });
-                    console.log('=== END ARM MESH SEARCH ===');
+                    // console.log('=== END ARM MESH SEARCH ===');
 
                     // Log found objects
                     const armObjects = [Mbajtesi_1, Shoulder_1, Biceps_up_1, Biceps_low_1, Forearm_1, Palm_1,
@@ -1091,8 +1557,8 @@ function publishSliderValue(sliderName, value) {
                         Ring3_1, Ring2_1, Ring1_1,
                         Thumb3_1, Thumb2_1, Thumb1_1];
                     const foundObjects = armObjects.filter(obj => obj !== null);
-                    console.log('=== ARM OBJECTS IDENTIFIED ===');
-                    console.log(`Found ${foundObjects.length} out of ${armObjects.length} required objects`);
+                    // console.log('=== ARM OBJECTS IDENTIFIED ===');
+                    // console.log(`Found ${foundObjects.length} out of ${armObjects.length} required objects`);
                     const names = ['Mbajtesi_1', 'Shoulder_1', 'Biceps_up_1', 'Biceps_low_1', 'Forearm_1', 'Palm_1',
                         'Index3_1', 'Index2_1', 'Index1_1',
                         'Middle3_1', 'Middle2_1', 'Middle1_1',
@@ -1100,7 +1566,7 @@ function publishSliderValue(sliderName, value) {
                         'Ring3_1', 'Ring2_1', 'Ring1_1',
                         'Thumb3_1', 'Thumb2_1', 'Thumb1_1'];
                     armObjects.forEach((obj, idx) => {
-                        console.log(`${names[idx]}: ${obj ? '✓ FOUND' : '✗ MISSING'}`);
+                        // console.log(`${names[idx]}: ${obj ? '✓ FOUND' : '✗ MISSING'}`);
                     });
 
                     // STEP 2: Preserve current world positions and rotations
@@ -1112,43 +1578,43 @@ function publishSliderValue(sliderName, value) {
                         if (obj) {
                             obj.updateMatrixWorld();
                             worldMatrices.set(obj, obj.matrixWorld.clone());
-                            console.log(`Stored world matrix for ${obj.name}`);
+                            // console.log(`Stored world matrix for ${obj.name}`);
                         }
                     });
 
                     // STEP 3 & 4: Establish hierarchical chain using ThreeJS parenting system
-                    console.log('=== REMOVING FROM CURRENT PARENTS ===');
+                    // console.log('=== REMOVING FROM CURRENT PARENTS ===');
 
                     // Remove Mbajtesi_1 from its parent first (new root of hierarchy)
                     if (Mbajtesi_1) {
                         const originalParent = Mbajtesi_1.parent;
                         if (originalParent) {
-                            console.log(`Removing ${Mbajtesi_1.name} from parent: ${originalParent.name || 'unnamed'}`);
+                            // console.log(`Removing ${Mbajtesi_1.name} from parent: ${originalParent.name || 'unnamed'}`);
                             originalParent.remove(Mbajtesi_1);
-                            console.log(`✓ ${Mbajtesi_1.name} removed from original parent`);
+                            // console.log(`✓ ${Mbajtesi_1.name} removed from original parent`);
                         } else {
-                            console.log(`${Mbajtesi_1.name} has no parent (already orphaned)`);
+                            // console.log(`${Mbajtesi_1.name} has no parent (already orphaned)`);
                         }
                     } else {
-                        console.warn('⚠ Mbajtesi_1 NOT FOUND - will use Shoulder_1 as root');
+                        // console.warn('⚠ Mbajtesi_1 NOT FOUND - will use Shoulder_1 as root');
                     }
 
                     // CRITICAL: Remove Shoulder_1 (Krahu_1_1) from its parent
                     if (Shoulder_1) {
                         const originalParent = Shoulder_1.parent;
                         if (originalParent) {
-                            console.log(`Removing ${Shoulder_1.name} from parent: ${originalParent.name || 'unnamed'}`);
+                            // console.log(`Removing ${Shoulder_1.name} from parent: ${originalParent.name || 'unnamed'}`);
                             originalParent.remove(Shoulder_1);
-                            console.log(`✓ ${Shoulder_1.name} removed from original parent`);
+                            // console.log(`✓ ${Shoulder_1.name} removed from original parent`);
                         } else {
-                            console.log(`${Shoulder_1.name} has no parent (already orphaned)`);
+                            // console.log(`${Shoulder_1.name} has no parent (already orphaned)`);
                         }
                     } else {
                         console.warn('⚠ Shoulder_1 (Krahu_1_1) NOT FOUND - cannot attach to hierarchy');
                     }
 
                     if (Biceps_up_1 && Biceps_up_1.parent) {
-                        console.log(`Removing Biceps_up_1 from parent: ${Biceps_up_1.parent.name || 'unnamed'}`);
+                        // console.log(`Removing Biceps_up_1 from parent: ${Biceps_up_1.parent.name || 'unnamed'}`);
                         Biceps_up_1.parent.remove(Biceps_up_1);
                     }
                     if (Biceps_low_1 && Biceps_low_1.parent) {
@@ -1169,13 +1635,13 @@ function publishSliderValue(sliderName, value) {
                         Thumb3_1, Thumb2_1, Thumb1_1
                     ];
 
-                    console.log('=== REMOVING FINGER PARENT GROUPS FROM CURRENT PARENTS ===');
+                    // console.log('=== REMOVING FINGER PARENT GROUPS FROM CURRENT PARENTS ===');
                     allFingerSegments.forEach(finger => {
                         if (finger && finger.parent) {
-                            console.log(`  Removing ${finger.name} from parent: ${finger.parent.name || 'unnamed'}`);
+                            // console.log(`  Removing ${finger.name} from parent: ${finger.parent.name || 'unnamed'}`);
                             finger.parent.remove(finger);
                         } else if (finger) {
-                            console.log(`  ${finger.name} has no parent (already orphaned)`);
+                            // console.log(`  ${finger.name} has no parent (already orphaned)`);
                         }
                     });
 
@@ -1188,97 +1654,97 @@ function publishSliderValue(sliderName, value) {
                     // Forearm_1 -> Palm_1
                     if (Forearm_1 && Palm_1) {
                         Forearm_1.add(Palm_1);
-                        console.log('✓ Forearm_1.add(Palm_1)');
+                        // console.log('✓ Forearm_1.add(Palm_1)');
                     }
 
                     // Forearm_1 -> ALL finger parent groups (so Elbow moves all fingers including base segments)
-                    console.log('=== ATTACHING FINGERS TO FOREARM_1 ===');
+                    // console.log('=== ATTACHING FINGERS TO FOREARM_1 ===');
                     if (Forearm_1) {
                         const fingerSegments = allFingerSegments.filter(f => f !== null);
                         if (fingerSegments.length > 0) {
-                            console.log(`Attaching ${fingerSegments.length}/15 finger parent groups to Forearm_1:`);
+                            // console.log(`Attaching ${fingerSegments.length}/15 finger parent groups to Forearm_1:`);
                             fingerSegments.forEach(finger => {
-                                console.log(`  - ${finger.name}`);
+                                // console.log(`  - ${finger.name}`);
                             });
                             Forearm_1.add(...fingerSegments);
-                            console.log(`✓✓✓ Forearm_1.add(${fingerSegments.length} finger parent groups) - SUCCESS`);
-                            console.log(`✓ All finger meshes will now move with elbow, biceps, shoulder, and shoulder blade`);
+                            // console.log(`✓✓✓ Forearm_1.add(${fingerSegments.length} finger parent groups) - SUCCESS`);
+                            // console.log(`✓ All finger meshes will now move with elbow, biceps, shoulder, and shoulder blade`);
                         } else {
-                            console.warn('⚠ No finger parent groups found to attach');
+                            // console.warn('⚠ No finger parent groups found to attach');
                         }
                     } else {
-                        console.error('✗ Forearm_1 NOT FOUND - cannot attach fingers!');
+                        // console.error('✗ Forearm_1 NOT FOUND - cannot attach fingers!');
                     }
 
                     // Biceps_low_1 -> Forearm_1
                     if (Biceps_low_1 && Forearm_1) {
                         Biceps_low_1.add(Forearm_1);
-                        console.log('✓ Biceps_low_1.add(Forearm_1)');
+                        // console.log('✓ Biceps_low_1.add(Forearm_1)');
                     }
 
                     // Biceps_up_1 -> Biceps_low_1
                     if (Biceps_up_1 && Biceps_low_1) {
                         Biceps_up_1.add(Biceps_low_1);
-                        console.log('✓ Biceps_up_1.add(Biceps_low_1)');
+                        // console.log('✓ Biceps_up_1.add(Biceps_low_1)');
                     }
 
                     // CRITICAL: Build hierarchy - Mbajtesi_1 -> Shoulder_1 -> Biceps_up_1
-                    console.log('=== BUILDING MBAJTESI_1 -> SHOULDER_1 (KRAHU_1_1) HIERARCHY ===');
+                    // console.log('=== BUILDING MBAJTESI_1 -> SHOULDER_1 (KRAHU_1_1) HIERARCHY ===');
 
                     // Mbajtesi_1 -> Shoulder_1 (Mbajtesi is the new root)
                     if (Mbajtesi_1 && Shoulder_1) {
-                        console.log(`Attaching Shoulder_1 to Mbajtesi_1 (${Mbajtesi_1.name})...`);
+                        // console.log(`Attaching Shoulder_1 to Mbajtesi_1 (${Mbajtesi_1.name})...`);
                         Mbajtesi_1.add(Shoulder_1);
-                        console.log(`✓✓✓ ${Mbajtesi_1.name}.add(${Shoulder_1.name}) - SUCCESS`);
-                        console.log(`  ${Mbajtesi_1.name}.children.length: ${Mbajtesi_1.children.length}`);
-                        console.log(`  ${Shoulder_1.name}.parent: ${Shoulder_1.parent ? Shoulder_1.parent.name : 'none'}`);
+                        // console.log(`✓✓✓ ${Mbajtesi_1.name}.add(${Shoulder_1.name}) - SUCCESS`);
+                        // console.log(`  ${Mbajtesi_1.name}.children.length: ${Mbajtesi_1.children.length}`);
+                        // console.log(`  ${Shoulder_1.name}.parent: ${Shoulder_1.parent ? Shoulder_1.parent.name : 'none'}`);
                     } else if (!Mbajtesi_1 && Shoulder_1) {
-                        console.log('⚠ Mbajtesi_1 not found - Shoulder_1 will be root');
+                        // console.log('⚠ Mbajtesi_1 not found - Shoulder_1 will be root');
                     } else if (Mbajtesi_1 && !Shoulder_1) {
-                        console.warn('⚠ Shoulder_1 not found - cannot attach to Mbajtesi_1');
+                        // console.warn('⚠ Shoulder_1 not found - cannot attach to Mbajtesi_1');
                     }
 
                     // Shoulder_1 -> Biceps_up_1 (attach Biceps to Shoulder)
                     if (Shoulder_1 && Biceps_up_1) {
-                        console.log(`Attaching Biceps_up_1 to Shoulder_1 (${Shoulder_1.name})...`);
+                        // console.log(`Attaching Biceps_up_1 to Shoulder_1 (${Shoulder_1.name})...`);
                         Shoulder_1.add(Biceps_up_1);
-                        console.log(`✓✓✓ ${Shoulder_1.name}.add(Biceps_up_1) - SUCCESS`);
-                        console.log(`  ${Shoulder_1.name}.children.length: ${Shoulder_1.children.length}`);
-                        console.log(`  Biceps_up_1.parent: ${Biceps_up_1.parent ? Biceps_up_1.parent.name : 'none'}`);
+                        // console.log(`✓✓✓ ${Shoulder_1.name}.add(Biceps_up_1) - SUCCESS`);
+                        // console.log(`  ${Shoulder_1.name}.children.length: ${Shoulder_1.children.length}`);
+                        // console.log(`  Biceps_up_1.parent: ${Biceps_up_1.parent ? Biceps_up_1.parent.name : 'none'}`);
                     } else {
                         if (!Shoulder_1) {
-                            console.error('✗ CRITICAL: Shoulder_1 (Krahu_1_1) NOT FOUND - cannot build complete hierarchy');
+                            // console.error('✗ CRITICAL: Shoulder_1 (Krahu_1_1) NOT FOUND - cannot build complete hierarchy');
                         }
                         if (!Biceps_up_1) {
-                            console.error('✗ CRITICAL: Biceps_up_1 NOT FOUND - cannot build complete hierarchy');
+                            // console.error('✗ CRITICAL: Biceps_up_1 NOT FOUND - cannot build complete hierarchy');
                         }
                     }
 
                     // Restore world positions by adding root back to scene/model
                     // Use Mbajtesi_1 as root if available, otherwise use Shoulder_1, otherwise Biceps_up_1
-                    console.log('=== ADDING ARM ROOT TO SCENE ===');
+                    // console.log('=== ADDING ARM ROOT TO SCENE ===');
 
                     // Determine the root of the hierarchy
                     let armRoot = Mbajtesi_1 || Shoulder_1;
 
                     if (Mbajtesi_1) {
                         // Mbajtesi_1 exists - make it the root of arm hierarchy
-                        console.log(`${Mbajtesi_1.name} found - adding to model as ROOT...`);
+                        // console.log(`${Mbajtesi_1.name} found - adding to model as ROOT...`);
 
                         // Ensure Mbajtesi_1 has no parent before adding to model
                         if (Mbajtesi_1.parent && Mbajtesi_1.parent !== model && Mbajtesi_1.parent !== scene) {
-                            console.log(`Removing ${Mbajtesi_1.name} from unexpected parent: ${Mbajtesi_1.parent.name || 'unnamed'}`);
+                            // console.log(`Removing ${Mbajtesi_1.name} from unexpected parent: ${Mbajtesi_1.parent.name || 'unnamed'}`);
                             Mbajtesi_1.parent.remove(Mbajtesi_1);
                         }
 
                         // Add Mbajtesi_1 to model if not already in scene hierarchy
                         if (!Mbajtesi_1.parent) {
                             model.add(Mbajtesi_1);
-                            console.log(`✓✓✓ ${Mbajtesi_1.name} SUCCESSFULLY added to model (ROOT of arm hierarchy)`);
-                            console.log(`  ${Mbajtesi_1.name}.parent: ${Mbajtesi_1.parent ? Mbajtesi_1.parent.name || Mbajtesi_1.parent.type : 'none'}`);
-                            console.log(`  ${Mbajtesi_1.name}.visible: ${Mbajtesi_1.visible}`);
+                            // console.log(`✓✓✓ ${Mbajtesi_1.name} SUCCESSFULLY added to model (ROOT of arm hierarchy)`);
+                            // console.log(`  ${Mbajtesi_1.name}.parent: ${Mbajtesi_1.parent ? Mbajtesi_1.parent.name || Mbajtesi_1.parent.type : 'none'}`);
+                            // console.log(`  ${Mbajtesi_1.name}.visible: ${Mbajtesi_1.visible}`);
                         } else {
-                            console.log(`✓ ${Mbajtesi_1.name} already has parent:`, Mbajtesi_1.parent.name || Mbajtesi_1.parent.type);
+                            // console.log(`✓ ${Mbajtesi_1.name} already has parent:`, Mbajtesi_1.parent.name || Mbajtesi_1.parent.type);
                         }
 
                         // Verify Mbajtesi_1 is in the scene graph
@@ -1295,28 +1761,28 @@ function publishSliderValue(sliderName, value) {
                             if (current) path.push(current.name || current.type);
                             depth++;
                         }
-                        console.log(`  ${Mbajtesi_1.name} in scene graph: ${isInScene ? '✓ YES' : '✗ NO'}`);
+                        // console.log(`  ${Mbajtesi_1.name} in scene graph: ${isInScene ? '✓ YES' : '✗ NO'}`);
                         if (isInScene) {
-                            console.log(`  Path to scene: ${path.reverse().join(' -> ')}`);
+                            // console.log(`  Path to scene: ${path.reverse().join(' -> ')}`);
                         }
                     } else if (Shoulder_1) {
                         // Mbajtesi_1 not found, use Shoulder_1 as root
-                        console.log(`${Shoulder_1.name} found - adding to model as ROOT (Mbajtesi_1 not found)...`);
+                        // console.log(`${Shoulder_1.name} found - adding to model as ROOT (Mbajtesi_1 not found)...`);
 
                         // Ensure Shoulder_1 has no parent before adding to model
                         if (Shoulder_1.parent && Shoulder_1.parent !== model && Shoulder_1.parent !== scene) {
-                            console.log(`Removing ${Shoulder_1.name} from unexpected parent: ${Shoulder_1.parent.name || 'unnamed'}`);
+                            // console.log(`Removing ${Shoulder_1.name} from unexpected parent: ${Shoulder_1.parent.name || 'unnamed'}`);
                             Shoulder_1.parent.remove(Shoulder_1);
                         }
 
                         // Add Shoulder_1 to model if not already in scene hierarchy
                         if (!Shoulder_1.parent) {
                             model.add(Shoulder_1);
-                            console.log(`✓✓✓ ${Shoulder_1.name} SUCCESSFULLY added to model (ROOT of arm hierarchy)`);
-                            console.log(`  ${Shoulder_1.name}.parent: ${Shoulder_1.parent ? Shoulder_1.parent.name || Shoulder_1.parent.type : 'none'}`);
-                            console.log(`  ${Shoulder_1.name}.visible: ${Shoulder_1.visible}`);
+                            // console.log(`✓✓✓ ${Shoulder_1.name} SUCCESSFULLY added to model (ROOT of arm hierarchy)`);
+                            // console.log(`  ${Shoulder_1.name}.parent: ${Shoulder_1.parent ? Shoulder_1.parent.name || Shoulder_1.parent.type : 'none'}`);
+                            // console.log(`  ${Shoulder_1.name}.visible: ${Shoulder_1.visible}`);
                         } else {
-                            console.log(`✓ ${Shoulder_1.name} already has parent:`, Shoulder_1.parent.name || Shoulder_1.parent.type);
+                            // console.log(`✓ ${Shoulder_1.name} already has parent:`, Shoulder_1.parent.name || Shoulder_1.parent.type);
                         }
 
                         // Verify Shoulder_1 is in the scene graph
@@ -1333,9 +1799,9 @@ function publishSliderValue(sliderName, value) {
                                 break;
                             }
                         }
-                        console.log(`  ${Shoulder_1.name} in scene graph: ${isInScene ? '✓ YES' : '✗ NO'}`);
+                        // console.log(`  ${Shoulder_1.name} in scene graph: ${isInScene ? '✓ YES' : '✗ NO'}`);
                         if (isInScene) {
-                            console.log(`  Path: ${path.reverse().join(' -> ')}`);
+                            // console.log(`  Path: ${path.reverse().join(' -> ')}`);
                         }
 
                     } else if (Biceps_up_1) {
@@ -1343,20 +1809,20 @@ function publishSliderValue(sliderName, value) {
                         console.warn('⚠ Shoulder_1 (Krahu_1_1) NOT FOUND - using Biceps_up_1 as ROOT');
                         if (!Biceps_up_1.parent) {
                             model.add(Biceps_up_1);
-                            console.log('⚠ Biceps_up_1 added to model as ROOT');
-                            console.log('⚠ Shoulder Blade slider will not function without Shoulder_1 (Krahu_1_1)');
+                            // console.log('⚠ Biceps_up_1 added to model as ROOT');
+                            // console.log('⚠ Shoulder Blade slider will not function without Shoulder_1 (Krahu_1_1)');
                         }
                     } else if (Biceps_low_1) {
                         console.warn('⚠⚠ Only Biceps_low_1 found (Shoulder_1/Krahu_1_1 missing)');
                         if (!Biceps_low_1.parent) {
                             model.add(Biceps_low_1);
-                            console.log('⚠⚠ Biceps_low_1 added to model as ROOT');
+                            // console.log('⚠⚠ Biceps_low_1 added to model as ROOT');
                         }
                     } else if (Forearm_1) {
                         console.warn('⚠⚠⚠ Only Forearm_1 found (Shoulder_1/Krahu_1_1 missing)');
                         if (!Forearm_1.parent) {
                             model.add(Forearm_1);
-                            console.log('⚠⚠⚠ Forearm_1 added to model as ROOT');
+                            // console.log('⚠⚠⚠ Forearm_1 added to model as ROOT');
                         }
                     }
 
@@ -1403,7 +1869,7 @@ function publishSliderValue(sliderName, value) {
                     if (Mbajtesi_1 && worldMatrices.has(Mbajtesi_1)) {
                         restoreWorldTransform(Mbajtesi_1, worldMatrices.get(Mbajtesi_1));
                         Mbajtesi_1.updateMatrixWorld(true);
-                        console.log('✓ Restored Mbajtesi_1 world transform');
+                        // console.log('✓ Restored Mbajtesi_1 world transform');
                     }
 
                     if (Shoulder_1 && worldMatrices.has(Shoulder_1)) {
@@ -1438,129 +1904,129 @@ function publishSliderValue(sliderName, value) {
                     model.updateMatrixWorld(true);
 
                     // CRITICAL: Final verification for Mbajtesi_1 and Shoulder_1
-                    console.log('=== MBAJTESI_1 FINAL VERIFICATION ===');
-                    if (Mbajtesi_1) {
-                        console.log('Mbajtesi_1 status:');
-                        console.log(`  Name: ${Mbajtesi_1.name}`);
-                        console.log(`  Type: ${Mbajtesi_1.type}`);
-                        console.log(`  Is Mesh: ${Mbajtesi_1.isMesh}`);
-                        console.log(`  Visible: ${Mbajtesi_1.visible}`);
-                        console.log(`  Parent: ${Mbajtesi_1.parent ? (Mbajtesi_1.parent.name || Mbajtesi_1.parent.type) : 'NONE'}`);
-                        console.log(`  Children count: ${Mbajtesi_1.children.length}`);
-                        console.log(`  Children names: [${Mbajtesi_1.children.map(c => c.name || 'unnamed').join(', ')}]`);
-                        console.log(`  Rotation (x,y,z): (${Mbajtesi_1.rotation.x.toFixed(3)}, ${Mbajtesi_1.rotation.y.toFixed(3)}, ${Mbajtesi_1.rotation.z.toFixed(3)})`);
+                    // console.log('=== MBAJTESI_1 FINAL VERIFICATION ===');
+                    // if (Mbajtesi_1) {
+                    //     console.log('Mbajtesi_1 status:');
+                    //     console.log(`  Name: ${Mbajtesi_1.name}`);
+                    //     console.log(`  Type: ${Mbajtesi_1.type}`);
+                    //     console.log(`  Is Mesh: ${Mbajtesi_1.isMesh}`);
+                    //     console.log(`  Visible: ${Mbajtesi_1.visible}`);
+                    //     console.log(`  Parent: ${Mbajtesi_1.parent ? (Mbajtesi_1.parent.name || Mbajtesi_1.parent.type) : 'NONE'}`);
+                    //     console.log(`  Children count: ${Mbajtesi_1.children.length}`);
+                    //     console.log(`  Children names: [${Mbajtesi_1.children.map(c => c.name || 'unnamed').join(', ')}]`);
+                    //     console.log(`  Rotation (x,y,z): (${Mbajtesi_1.rotation.x.toFixed(3)}, ${Mbajtesi_1.rotation.y.toFixed(3)}, ${Mbajtesi_1.rotation.z.toFixed(3)})`);
 
-                        // Ensure Mbajtesi_1 is visible
-                        if (!Mbajtesi_1.visible) {
-                            Mbajtesi_1.visible = true;
-                            console.log('  ✓ Forced Mbajtesi_1 to visible');
-                        }
-                    } else {
-                        console.log('⚠ Mbajtesi_1 not found in model');
-                    }
+                    //     // Ensure Mbajtesi_1 is visible
+                    //     if (!Mbajtesi_1.visible) {
+                    //         Mbajtesi_1.visible = true;
+                    //         console.log('  ✓ Forced Mbajtesi_1 to visible');
+                    //     }
+                    // } else {
+                    //     console.log('⚠ Mbajtesi_1 not found in model');
+                    // }
 
-                    console.log('=== SHOULDER_1 (KRAHU_1_1) FINAL VERIFICATION ===');
-                    if (Shoulder_1) {
-                        console.log('Shoulder_1 (Krahu_1_1) status:');
-                        console.log(`  Name: ${Shoulder_1.name}`);
-                        console.log(`  Type: ${Shoulder_1.type}`);
-                        console.log(`  Is Mesh: ${Shoulder_1.isMesh}`);
-                        console.log(`  Visible: ${Shoulder_1.visible}`);
-                        console.log(`  Parent: ${Shoulder_1.parent ? (Shoulder_1.parent.name || Shoulder_1.parent.type) : 'NONE'}`);
-                        console.log(`  Children count: ${Shoulder_1.children.length}`);
-                        console.log(`  Children names: [${Shoulder_1.children.map(c => c.name || 'unnamed').join(', ')}]`);
-                        console.log(`  Rotation (x,y,z): (${Shoulder_1.rotation.x.toFixed(3)}, ${Shoulder_1.rotation.y.toFixed(3)}, ${Shoulder_1.rotation.z.toFixed(3)})`);
+                    // console.log('=== SHOULDER_1 (KRAHU_1_1) FINAL VERIFICATION ===');
+                    // if (Shoulder_1) {
+                    //     console.log('Shoulder_1 (Krahu_1_1) status:');
+                    //     console.log(`  Name: ${Shoulder_1.name}`);
+                    //     console.log(`  Type: ${Shoulder_1.type}`);
+                    //     console.log(`  Is Mesh: ${Shoulder_1.isMesh}`);
+                    //     console.log(`  Visible: ${Shoulder_1.visible}`);
+                    //     console.log(`  Parent: ${Shoulder_1.parent ? (Shoulder_1.parent.name || Shoulder_1.parent.type) : 'NONE'}`);
+                    //     console.log(`  Children count: ${Shoulder_1.children.length}`);
+                    //     console.log(`  Children names: [${Shoulder_1.children.map(c => c.name || 'unnamed').join(', ')}]`);
+                    //     console.log(`  Rotation (x,y,z): (${Shoulder_1.rotation.x.toFixed(3)}, ${Shoulder_1.rotation.y.toFixed(3)}, ${Shoulder_1.rotation.z.toFixed(3)})`);
 
-                        // Ensure Shoulder_1 is visible
-                        if (!Shoulder_1.visible) {
-                            Shoulder_1.visible = true;
-                            console.log('  ✓ Forced Shoulder_1 to visible');
-                        }
+                    //     // Ensure Shoulder_1 is visible
+                    //     if (!Shoulder_1.visible) {
+                    //         Shoulder_1.visible = true;
+                    //         console.log('  ✓ Forced Shoulder_1 to visible');
+                    //     }
 
-                        // Verify Shoulder_1 has Biceps_up_1 as child
-                        if (Biceps_up_1 && Shoulder_1.children.includes(Biceps_up_1)) {
-                            console.log('  ✓✓✓ Biceps_up_1 IS child of Shoulder_1 - hierarchy correct!');
-                        } else if (Biceps_up_1) {
-                            console.error('  ✗✗✗ Biceps_up_1 is NOT child of Shoulder_1 - hierarchy BROKEN!');
-                            console.log('  Attempting to fix...');
-                            if (Biceps_up_1.parent) Biceps_up_1.parent.remove(Biceps_up_1);
-                            Shoulder_1.add(Biceps_up_1);
-                            model.updateMatrixWorld(true);
-                            console.log('  ✓ Fixed: Biceps_up_1 now child of Shoulder_1');
-                        }
+                    //     // Verify Shoulder_1 has Biceps_up_1 as child
+                    //     if (Biceps_up_1 && Shoulder_1.children.includes(Biceps_up_1)) {
+                    //         console.log('  ✓✓✓ Biceps_up_1 IS child of Shoulder_1 - hierarchy correct!');
+                    //     } else if (Biceps_up_1) {
+                    //         console.error('  ✗✗✗ Biceps_up_1 is NOT child of Shoulder_1 - hierarchy BROKEN!');
+                    //         console.log('  Attempting to fix...');
+                    //         if (Biceps_up_1.parent) Biceps_up_1.parent.remove(Biceps_up_1);
+                    //         Shoulder_1.add(Biceps_up_1);
+                    //         model.updateMatrixWorld(true);
+                    //         console.log('  ✓ Fixed: Biceps_up_1 now child of Shoulder_1');
+                    //     }
 
-                        // Check if Shoulder_1 is reachable from scene
-                        let depth = 0;
-                        let current = Shoulder_1;
-                        let path = [Shoulder_1.name || 'Shoulder_1'];
-                        while (current.parent && depth < 10) {
-                            current = current.parent;
-                            path.push(current.name || current.type);
-                            depth++;
-                            if (current === scene) {
-                                console.log(`  ✓ Shoulder_1 is in scene graph (depth: ${depth})`);
-                                console.log(`  Path: ${path.reverse().join(' -> ')}`);
-                                break;
-                            }
-                        }
-                        if (current !== scene) {
-                            console.error('  ✗ Shoulder_1 is NOT in scene graph!');
-                            console.log('  Current path:', path.reverse().join(' -> '));
-                        }
-                    } else {
-                        console.error('✗✗✗ Shoulder_1 is NULL - was never found in the model!');
-                        console.log('Searching entire model for any shoulder-like objects...');
-                        const possibleShoulders = [];
-                        model.traverse((child) => {
-                            if (child.name && child.name.toLowerCase().includes('shoulder')) {
-                                possibleShoulders.push({
-                                    name: child.name,
-                                    type: child.type,
-                                    isMesh: child.isMesh
-                                });
-                            }
-                        });
-                        console.log('Possible shoulder objects found:', possibleShoulders);
-                    }
-                    console.log('=== END SHOULDER_1 VERIFICATION ===');
+                    //     // Check if Shoulder_1 is reachable from scene
+                    //     let depth = 0;
+                    //     let current = Shoulder_1;
+                    //     let path = [Shoulder_1.name || 'Shoulder_1'];
+                    //     while (current.parent && depth < 10) {
+                    //         current = current.parent;
+                    //         path.push(current.name || current.type);
+                    //         depth++;
+                    //         if (current === scene) {
+                    //             console.log(`  ✓ Shoulder_1 is in scene graph (depth: ${depth})`);
+                    //             console.log(`  Path: ${path.reverse().join(' -> ')}`);
+                    //             break;
+                    //         }
+                    //     }
+                    //     if (current !== scene) {
+                    //         console.error('  ✗ Shoulder_1 is NOT in scene graph!');
+                    //         console.log('  Current path:', path.reverse().join(' -> '));
+                    //     }
+                    // } else {
+                    //     console.error('✗✗✗ Shoulder_1 is NULL - was never found in the model!');
+                    //     console.log('Searching entire model for any shoulder-like objects...');
+                    //     const possibleShoulders = [];
+                    //     model.traverse((child) => {
+                    //         if (child.name && child.name.toLowerCase().includes('shoulder')) {
+                    //             possibleShoulders.push({
+                    //                 name: child.name,
+                    //                 type: child.type,
+                    //                 isMesh: child.isMesh
+                    //             });
+                    //         }
+                    //     });
+                    //     console.log('Possible shoulder objects found:', possibleShoulders);
+                    // }
+                    // console.log('=== END SHOULDER_1 VERIFICATION ===');
 
                     // VERIFICATION: Check finger attachments
-                    console.log('=== FINGER ATTACHMENT VERIFICATION ===');
+                    // console.log('=== FINGER ATTACHMENT VERIFICATION ===');
                     if (Forearm_1) {
                         const attachedFingers = allFingerSegments.filter(f => f !== null && f.parent === Forearm_1);
                         const detachedFingers = allFingerSegments.filter(f => f !== null && f.parent !== Forearm_1);
 
-                        console.log(`Fingers attached to Forearm_1: ${attachedFingers.length}/${allFingerSegments.filter(f => f !== null).length}`);
+                        // console.log(`Fingers attached to Forearm_1: ${attachedFingers.length}/${allFingerSegments.filter(f => f !== null).length}`);
 
                         if (attachedFingers.length > 0) {
-                            console.log('  ✓ Attached finger parent groups:');
-                            attachedFingers.forEach(f => console.log(`    - ${f.name} (children: ${f.children.length})`));
+                            // console.log('  ✓ Attached finger parent groups:');
+                            // attachedFingers.forEach(f => console.log(`    - ${f.name} (children: ${f.children.length})`));
                         }
 
                         if (detachedFingers.length > 0) {
-                            console.error('  ✗ DETACHED finger parent groups (NOT moving with arm):');
+                            // console.error('  ✗ DETACHED finger parent groups (NOT moving with arm):');
                             detachedFingers.forEach(f => {
                                 console.error(`    - ${f.name} (parent: ${f.parent ? f.parent.name : 'none'})`);
                                 // Try to re-attach
                                 if (f.parent) f.parent.remove(f);
                                 Forearm_1.add(f);
-                                console.log(`    ✓ Re-attached ${f.name} to Forearm_1`);
+                                // console.log(`    ✓ Re-attached ${f.name} to Forearm_1`);
                             });
                         }
 
-                        console.log(`Total finger parent groups in hierarchy: ${attachedFingers.length + detachedFingers.length}`);
+                        // console.log(`Total finger parent groups in hierarchy: ${attachedFingers.length + detachedFingers.length}`);
                     } else {
-                        console.error('✗ Forearm_1 not found - cannot verify finger attachments');
+                        // console.error('✗ Forearm_1 not found - cannot verify finger attachments');
                     }
-                    console.log('=== END FINGER VERIFICATION ===');
+                    // console.log('=== END FINGER VERIFICATION ===');
 
                     // VERIFICATION: Check complete hierarchy
-                    console.log('=== HIERARCHY VERIFICATION ===');
+                    // console.log('=== HIERARCHY VERIFICATION ===');
                     function printHierarchy(obj, indent = 0) {
                         const prefix = '  '.repeat(indent);
                         const name = obj.name || 'unnamed';
                         const type = obj.isMesh ? '[MESH]' : obj.isBone ? '[BONE]' : `[${obj.type}]`;
-                        console.log(`${prefix}${type} ${name}`);
+                        // console.log(`${prefix}${type} ${name}`);
                         obj.children.forEach(child => {
                             // Only print arm-related children
                             if (child.name && (
@@ -1580,17 +2046,17 @@ function publishSliderValue(sliderName, value) {
                     }
 
                     if (Shoulder_1) {
-                        console.log('Complete arm hierarchy starting from Shoulder_1:');
+                        // console.log('Complete arm hierarchy starting from Shoulder_1:');
                         printHierarchy(Shoulder_1);
                     } else if (Biceps_up_1) {
-                        console.log('Complete arm hierarchy starting from Biceps_up_1:');
+                        // console.log('Complete arm hierarchy starting from Biceps_up_1:');
                         printHierarchy(Biceps_up_1);
                     } else if (Biceps_low_1) {
-                        console.log('Complete arm hierarchy starting from Biceps_low_1:');
+                        // console.log('Complete arm hierarchy starting from Biceps_low_1:');
                         printHierarchy(Biceps_low_1);
                     } else if (Forearm_1) {
-                        console.log('Complete arm hierarchy starting from Forearm_1:');
-                        printHierarchy(Forearm_1);
+                        // console.log('Complete arm hierarchy starting from Forearm_1:');
+                        // printHierarchy(Forearm_1);
                     }
 
                     // Count visible meshes
@@ -1600,8 +2066,8 @@ function publishSliderValue(sliderName, value) {
                             visibleArmMeshes++;
                         }
                     });
-                    console.log(`Total visible arm meshes in scene: ${visibleArmMeshes}`);
-                    console.log('=== END HIERARCHY VERIFICATION ===');
+                    // console.log(`Total visible arm meshes in scene: ${visibleArmMeshes}`);
+                    // console.log('=== END HIERARCHY VERIFICATION ===');
 
                     // Assign motors to the actual mesh objects (not groups)
                     // These will be used by the slider rotation functions
@@ -1610,45 +2076,45 @@ function publishSliderValue(sliderName, value) {
                     motors.motor4 = Biceps_up_1;    // Shoulder Blade rotates Biceps_up_1 (X-axis - forward/back)
                     motors.motor5 = Biceps_low_1;   // Biceps rotates Biceps_low_1
 
-                    console.log('=== MOTOR ASSIGNMENTS ===');
+                    // console.log('=== MOTOR ASSIGNMENTS ===');
                     const motorStatus = {
                         motor2: motors.motor2 ? `✓ ${motors.motor2.name}` : '✗ NOT FOUND',
                         motor3: motors.motor3 ? `✓ ${motors.motor3.name}` : '✗ NOT FOUND',
                         motor4: motors.motor4 ? `✓ ${motors.motor4.name}` : '✗ NOT FOUND (Shoulder Blade slider will not work)',
                         motor5: motors.motor5 ? `✓ ${motors.motor5.name}` : '✗ NOT FOUND'
                     };
-                    console.log('  motor2 (Elbow - Forearm_1):', motorStatus.motor2);
-                    console.log('  motor3 (Shoulder - Shoulder_1):', motorStatus.motor3);
-                    console.log('  motor4 (Shoulder Blade - Biceps_up_1):', motorStatus.motor4);
-                    console.log('  motor5 (Biceps - Biceps_low_1):', motorStatus.motor5);
+                    // console.log('  motor2 (Elbow - Forearm_1):', motorStatus.motor2);
+                    // console.log('  motor3 (Shoulder - Shoulder_1):', motorStatus.motor3);
+                    // console.log('  motor4 (Shoulder Blade - Biceps_up_1):', motorStatus.motor4);
+                    // console.log('  motor5 (Biceps - Biceps_low_1):', motorStatus.motor5);
 
-                    console.log('=== PARENTING HIERARCHY ESTABLISHED ===');
+                    // console.log('=== PARENTING HIERARCHY ESTABLISHED ===');
                     if (Shoulder_1) {
-                        console.log('Hierarchy: Shoulder_1 -> Biceps_up_1 -> Biceps_low_1 -> Forearm_1 -> Palm_1 & [fingers]');
+                        // console.log('Hierarchy: Shoulder_1 -> Biceps_up_1 -> Biceps_low_1 -> Forearm_1 -> Palm_1 & [fingers]');
                     } else {
-                        console.log('Hierarchy: Biceps_up_1 -> Biceps_low_1 -> Forearm_1 -> Palm_1 & [fingers]');
-                        console.log('⚠ WARNING: Shoulder_1 missing - hierarchy starts at Biceps_up_1');
+                        // console.log('Hierarchy: Biceps_up_1 -> Biceps_low_1 -> Forearm_1 -> Palm_1 & [fingers]');
+                        // console.log('⚠ WARNING: Shoulder_1 missing - hierarchy starts at Biceps_up_1');
                     }
 
                     // Verify hierarchy
                     if (Shoulder_1) {
-                        console.log('Shoulder_1 children:', Shoulder_1.children.map(c => c.name || 'unnamed'));
+                        // console.log('Shoulder_1 children:', Shoulder_1.children.map(c => c.name || 'unnamed'));
                     }
                     if (Biceps_up_1) {
-                        console.log('Biceps_up_1 children:', Biceps_up_1.children.map(c => c.name || 'unnamed'));
+                        // console.log('Biceps_up_1 children:', Biceps_up_1.children.map(c => c.name || 'unnamed'));
                     }
                     if (Biceps_low_1) {
-                        console.log('Biceps_low_1 children:', Biceps_low_1.children.map(c => c.name || 'unnamed'));
+                        // console.log('Biceps_low_1 children:', Biceps_low_1.children.map(c => c.name || 'unnamed'));
                     }
                     if (Forearm_1) {
-                        console.log('Forearm_1 children:', Forearm_1.children.map(c => c.name || 'unnamed'));
+                        // console.log('Forearm_1 children:', Forearm_1.children.map(c => c.name || 'unnamed'));
                     }
                     if (Palm_1) {
-                        console.log('Palm_1 children:', Palm_1.children.map(c => c.name || 'unnamed'));
+                        // console.log('Palm_1 children:', Palm_1.children.map(c => c.name || 'unnamed'));
                     }
 
                     // FINAL CHECK: Ensure base_link and Cube are hidden
-                    console.log('=== FINAL VISIBILITY CHECK ===');
+                    // console.log('=== FINAL VISIBILITY CHECK ===');
                     let baseLinkFound = false;
                     let cubeFound = false;
                     model.traverse(function (child) {
@@ -1656,7 +2122,7 @@ function publishSliderValue(sliderName, value) {
                         if (name === 'base_link' || name.toLowerCase().includes('base_link') || name.toLowerCase().includes('baselink')) {
                             child.visible = false;
                             baseLinkFound = true;
-                            console.log('✓ base_link hidden:', name);
+                            // console.log('✓ base_link hidden:', name);
                             // Hide all its children too
                             child.traverse(function (desc) {
                                 if (desc !== child) desc.visible = false;
@@ -1665,16 +2131,16 @@ function publishSliderValue(sliderName, value) {
                         if (name === 'Cube' || name.toLowerCase() === 'cube') {
                             child.visible = false;
                             cubeFound = true;
-                            console.log('✓ Cube hidden:', name);
+                            // console.log('✓ Cube hidden:', name);
                             // Hide all its children too
                             child.traverse(function (desc) {
                                 if (desc !== child) desc.visible = false;
                             });
                         }
                     });
-                    if (!baseLinkFound) console.log('⚠ base_link not found in model (might already be removed)');
-                    if (!cubeFound) console.log('⚠ Cube not found in model (might already be removed)');
-                    console.log('=== END VISIBILITY CHECK ===');
+                    // if (!baseLinkFound) console.log('⚠ base_link not found in model (might already be removed)');
+                    // if (!cubeFound) console.log('⚠ Cube not found in model (might already be removed)');
+                    // console.log('=== END VISIBILITY CHECK ===');
 
                     // Initialize the biomechanical arm joint system
                     // This sets up the hierarchical joint control for natural arm movement
@@ -1684,7 +2150,7 @@ function publishSliderValue(sliderName, value) {
                 },
                 function (xhr) {
                     if (xhr.lengthComputable) {
-                        console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                        // console.log((xhr.loaded / xhr.total * 100) + '% loaded');
                     }
                 },
                 function (error) {
@@ -1700,7 +2166,7 @@ function publishSliderValue(sliderName, value) {
             loader.load(
                 filePath,
                 function (geometry) {
-                    console.log('STL Model loaded successfully!');
+                    // console.log('STL Model loaded successfully!');
                     const material = new THREE.MeshPhongMaterial({
                         color: 0x5a9fff,
                         shininess: 100
@@ -1715,7 +2181,7 @@ function publishSliderValue(sliderName, value) {
                     model.scale.multiplyScalar(scale);
 
                     scene.add(model);
-                    console.log('Model added to scene');
+                    // console.log('Model added to scene');
 
                     motors.motor2 = model;
                     motors.motor3 = model;
@@ -1724,7 +2190,7 @@ function publishSliderValue(sliderName, value) {
                 },
                 function (xhr) {
                     if (xhr.lengthComputable) {
-                        console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                        // console.log((xhr.loaded / xhr.total * 100) + '% loaded');
                     }
                 },
                 function (error) {
@@ -1754,7 +2220,7 @@ function publishSliderValue(sliderName, value) {
                     allMeshes.push(child);
                 }
             });
-            console.log('All meshes found:', allMeshes.length, allMeshes.map(m => m.name || 'unnamed'));
+            // console.log('All meshes found:', allMeshes.length, allMeshes.map(m => m.name || 'unnamed'));
             return allMeshes[index] || null;
         }
 
@@ -1821,7 +2287,7 @@ function publishSliderValue(sliderName, value) {
                 // Try exact match first
                 if (childName === name || nameLower === searchLower) {
                     found = child;
-                    console.log(`Found exact match for ${name}: ${childName}`);
+                    // console.log(`Found exact match for ${name}: ${childName}`);
                     return;
                 }
 
@@ -1829,7 +2295,7 @@ function publishSliderValue(sliderName, value) {
                 if (nameLower.includes(searchLower) || searchLower.includes(nameLower)) {
                     if (!found) { // Only take first match
                         found = child;
-                        console.log(`Found partial match for ${name}: ${childName}`);
+                        // console.log(`Found partial match for ${name}: ${childName}`);
                     }
                 }
             });
@@ -1854,7 +2320,7 @@ function publishSliderValue(sliderName, value) {
                 return false;
             }
 
-            console.log('=== INITIALIZING ARM JOINT SYSTEM ===');
+            // console.log('=== INITIALIZING ARM JOINT SYSTEM ===');
 
             // First try to use the motor assignments if available
             if (motors.motor4) armJoints.shoulderBlade = motors.motor4;  // motor4 = Biceps_up_1
@@ -1891,7 +2357,7 @@ function publishSliderValue(sliderName, value) {
                         y: joint.rotation.y,
                         z: joint.rotation.z
                     });
-                    console.log(`✓ ${jointKey} joint (${displayNames[index]}): FOUND - ${joint.name}`);
+                    // console.log(`✓ ${jointKey} joint (${displayNames[index]}): FOUND - ${joint.name}`);
                 } else {
                     console.warn(`✗ ${jointKey} joint (${displayNames[index]}): MISSING`);
                     allFound = false;
@@ -1899,7 +2365,7 @@ function publishSliderValue(sliderName, value) {
             });
 
             // Verify hierarchy is correct by checking parent-child relationships
-            console.log('=== VERIFYING HIERARCHY ===');
+            // console.log('=== VERIFYING HIERARCHY ===');
 
             // Check if Mbajtesi_1 exists and verify it's the parent of Shoulder_1
             let mbajtesiFound = false;
@@ -1908,21 +2374,21 @@ function publishSliderValue(sliderName, value) {
                     if (child.name === 'Mbajtesi_1' || child.name === 'Mbajtesi') {
                         mbajtesiFound = true;
                         if (armJoints.shoulder && child.children.includes(armJoints.shoulder)) {
-                            console.log('✓ Mbajtesi_1 -> Shoulder_1 (correct)');
+                            // console.log('✓ Mbajtesi_1 -> Shoulder_1 (correct)');
                         } else if (armJoints.shoulder) {
-                            console.log(`ℹ Mbajtesi_1 found but Shoulder_1 parent is: ${armJoints.shoulder.parent ? armJoints.shoulder.parent.name : 'none'}`);
+                            // console.log(`ℹ Mbajtesi_1 found but Shoulder_1 parent is: ${armJoints.shoulder.parent ? armJoints.shoulder.parent.name : 'none'}`);
                         }
                     }
                 });
             }
             if (!mbajtesiFound) {
-                console.log('ℹ Mbajtesi_1 not found in model - using Shoulder_1 as root');
+                // console.log('ℹ Mbajtesi_1 not found in model - using Shoulder_1 as root');
             }
 
             // Check Shoulder_1 -> Biceps_up_1
             if (armJoints.shoulder && armJoints.shoulderBlade) {
                 if (armJoints.shoulderBlade.parent === armJoints.shoulder) {
-                    console.log('✓ Shoulder_1 -> Biceps_up_1 (correct)');
+                    // console.log('✓ Shoulder_1 -> Biceps_up_1 (correct)');
                 } else {
                     console.warn('✗ Shoulder_1 -> Biceps_up_1 (incorrect, fixing...)');
                     // Try to fix the hierarchy
@@ -1930,7 +2396,7 @@ function publishSliderValue(sliderName, value) {
                         armJoints.shoulderBlade.parent.remove(armJoints.shoulderBlade);
                     }
                     armJoints.shoulder.add(armJoints.shoulderBlade);
-                    console.log('✓ Fixed: Shoulder_1 -> Biceps_up_1');
+                    // console.log('✓ Fixed: Shoulder_1 -> Biceps_up_1');
                 }
             } else {
                 if (!armJoints.shoulder) {
@@ -1941,14 +2407,14 @@ function publishSliderValue(sliderName, value) {
             // Check Biceps_up_1 -> Biceps_low_1
             if (armJoints.shoulderBlade && armJoints.biceps) {
                 if (armJoints.biceps.parent === armJoints.shoulderBlade) {
-                    console.log('✓ Biceps_up_1 -> Biceps_low_1 (correct)');
+                    // console.log('✓ Biceps_up_1 -> Biceps_low_1 (correct)');
                 } else {
                     console.warn('✗ Biceps_up_1 -> Biceps_low_1 (incorrect, fixing...)');
                     if (armJoints.biceps.parent) {
                         armJoints.biceps.parent.remove(armJoints.biceps);
                     }
                     armJoints.shoulderBlade.add(armJoints.biceps);
-                    console.log('✓ Fixed: Biceps_up_1 -> Biceps_low_1');
+                    // console.log('✓ Fixed: Biceps_up_1 -> Biceps_low_1');
                 }
             } else {
                 if (!armJoints.shoulderBlade) {
@@ -1962,14 +2428,14 @@ function publishSliderValue(sliderName, value) {
             // Check Biceps_low_1 -> Forearm_1
             if (armJoints.biceps && armJoints.elbow) {
                 if (armJoints.elbow.parent === armJoints.biceps) {
-                    console.log('✓ Biceps_low_1 -> Forearm_1 (correct)');
+                    // console.log('✓ Biceps_low_1 -> Forearm_1 (correct)');
                 } else {
                     console.warn('✗ Biceps_low_1 -> Forearm_1 (incorrect, fixing...)');
                     if (armJoints.elbow.parent) {
                         armJoints.elbow.parent.remove(armJoints.elbow);
                     }
                     armJoints.biceps.add(armJoints.elbow);
-                    console.log('✓ Fixed: Biceps_low_1 -> Forearm_1');
+                    // console.log('✓ Fixed: Biceps_low_1 -> Forearm_1');
                 }
             } else {
                 if (!armJoints.biceps) {
@@ -1983,9 +2449,9 @@ function publishSliderValue(sliderName, value) {
             // Update world matrices after any hierarchy fixes
             model.updateMatrixWorld(true);
 
-            console.log('=== HIERARCHY VERIFICATION COMPLETE ===');
+            // console.log('=== HIERARCHY VERIFICATION COMPLETE ===');
 
-            console.log(allFound ? '=== ARM JOINT SYSTEM READY ===' : '=== ARM JOINT SYSTEM INCOMPLETE ===');
+            // console.log(allFound ? '=== ARM JOINT SYSTEM READY ===' : '=== ARM JOINT SYSTEM INCOMPLETE ===');
             return allFound;
         }
 
@@ -2020,8 +2486,8 @@ function publishSliderValue(sliderName, value) {
 
             // Debug: Log rotation change
             if (Math.abs(angle) > 0.01) {
-                console.log(`  Shoulder_1 rotation.x: ${shoulderInitial.x.toFixed(3)} → ${shoulderJoint.rotation.x.toFixed(3)} (Δ: ${angle.toFixed(3)} rad)`);
-                console.log(`  Arm spinning like a wheel on X-axis`);
+                // console.log(`  Shoulder_1 rotation.x: ${shoulderInitial.x.toFixed(3)} → ${shoulderJoint.rotation.x.toFixed(3)} (Δ: ${angle.toFixed(3)} rad)`);
+                // console.log(`  Arm spinning like a wheel on X-axis`);
             }
 
             // Update Shoulder_1 matrices to propagate to all children
@@ -2047,7 +2513,7 @@ function publishSliderValue(sliderName, value) {
             // Rotate Biceps_up_1 around Y axis (arm moves while Shoulder_1 stays static)
             joint.rotation.y = initial.y + angle;
 
-            console.log(`  Shoulder slider: Biceps_up_1 rotation.y = ${joint.rotation.y.toFixed(3)} (angle: ${angle.toFixed(3)})`);
+            // console.log(`  Shoulder slider: Biceps_up_1 rotation.y = ${joint.rotation.y.toFixed(3)} (angle: ${angle.toFixed(3)})`);
 
             // Update matrices to propagate transformation to all children
             joint.updateMatrixWorld(true);
@@ -2164,9 +2630,9 @@ function publishSliderValue(sliderName, value) {
             // Apply rotation
             if (ensureArmSystemInitialized()) {
                 const angleRad = animation.currentValue * (Math.PI / 180);
-                console.log(`${label}: ${animation.currentValue.toFixed(1)}° (${angleRad.toFixed(3)} rad)`);
+                // console.log(`${label}: ${animation.currentValue.toFixed(1)}° (${angleRad.toFixed(3)} rad)`);
                 rotateFunction(angleRad);
-                
+
                 // Publish gradual MQTT values during animation
                 publishSliderValue(label.replace(' ', ''), animation.currentValue);
             }
@@ -2254,8 +2720,8 @@ function publishSliderValue(sliderName, value) {
         const resetBtn = document.getElementById('resetSlidersBtn');
         if (resetBtn) {
             resetBtn.addEventListener('click', function () {
-                console.log('Gradually resetting all sliders to 0°');
-                
+                // console.log('Gradually resetting all sliders to 0°');
+
                 // Update animation targets to 0 for all sliders
                 // MQTT values will be published gradually during the animation
                 activeSliders.forEach((slider, index) => {
@@ -2302,7 +2768,7 @@ function publishSliderValue(sliderName, value) {
         const modelPath = 'hand.glb';
         const fileExtension = modelPath.split('.').pop().toLowerCase();
 
-        console.log('Attempting to load model:', modelPath);
+        // console.log('Attempting to load model:', modelPath);
 
         if (fileExtension === 'gltf' || fileExtension === 'glb') {
             loadGLTFModel(modelPath);
