@@ -716,7 +716,7 @@ export function buildFingerHierarchy(model, options = {}) {
         controls.minDistance = 4; // Minimum zoom distance
         controls.maxDistance = 5; // Maximum zoom distance
         controls.maxPolarAngle = Math.PI / 2; // Prevent camera going below ground
-        controls.target.set(0, 3, 0); // Look at higher point
+        controls.target.set(0, 4.2, 0); // Look at higher point
 
         // ============================================
         // COMPREHENSIVE SHADOW SYSTEM OVERHAUL
