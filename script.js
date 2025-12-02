@@ -150,11 +150,10 @@ function setupFingerButtons() {
         const jointName = fingerMap[fingerName];
 
         if (!jointName) {
-            // console.error('Unknown finger button:', fingerName);
             return;
         }
 
-        // Initialize state
+        // Initialize state to 0 (open) by default
         fingerStates.set(jointName, 0);
 
         button.addEventListener('click', function () {
@@ -162,20 +161,33 @@ function setupFingerButtons() {
             const currentState = fingerStates.get(jointName) || 0;
             const newValue = currentState === 180 ? 0 : 180;
 
-            // Update state
-            fingerStates.set(jointName, newValue);
+            // Only send command if state is actually changing
+            if (newValue !== currentState) {
+                // Update state
+                fingerStates.set(jointName, newValue);
 
-            // Send the value (isRadians = false because we're sending degrees)
-            publishJointValue(jointName, newValue, false);
+                // Send the value (isRadians = false because we're sending degrees)
+                publishJointValue(jointName, newValue, false);
 
-            // Visual feedback
-            this.classList.toggle('active', newValue === 180);
+                // Visual feedback
+                this.classList.toggle('active', newValue === 180);
 
-            console.log('👆 Finger button pressed:', jointName, newValue + '°');
+                console.log('👆 Finger button pressed:', jointName, newValue + '°');
+            }
         });
     });
 
-    // console.log('✓ Finger buttons setup complete');
+    // Initialize button visual states
+    fingerButtons.forEach(button => {
+        const fingerName = button.textContent;
+        const jointName = fingerMap[fingerName];
+        if (jointName) {
+            const currentState = fingerStates.get(jointName) || 0;
+            button.classList.toggle('active', currentState === 180);
+        }
+    });
+
+    console.log('✓ Finger buttons setup complete');
 
     // NEW: Add Open/Close All buttons functionality
     setupOpenCloseButtons(fingerMap, fingerStates);
@@ -206,6 +218,18 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
     const fingerJointNames = Object.values(fingerMap).filter(name => name !== 'ThumbSideways');
 
     openAllBtn.addEventListener('click', function () {
+        // Check if any fingers are actually closed (state = 180)
+        const closedFingers = fingerJointNames.filter(jointName => {
+            const currentState = fingerStates.get(jointName) || 0;
+            return currentState === 180;
+        });
+
+        // If no fingers are closed, do nothing
+        if (closedFingers.length === 0) {
+            // console.log('👐 All fingers are already open - no command sent');
+            return;
+        }
+
         console.log('👐 Opening all fingers (0°)');
 
         fingerJointNames.forEach(jointName => {
@@ -226,6 +250,18 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
     });
 
     closeAllBtn.addEventListener('click', function () {
+        // Check if any fingers are actually open (state = 0)
+        const openFingers = fingerJointNames.filter(jointName => {
+            const currentState = fingerStates.get(jointName) || 0;
+            return currentState === 0;
+        });
+
+        // If no fingers are open, do nothing
+        if (openFingers.length === 0) {
+            // console.log('🤏 All fingers are already closed - no command sent');
+            return;
+        }
+
         console.log('🤏 Closing all fingers (180°)');
 
         fingerJointNames.forEach(jointName => {
@@ -245,7 +281,36 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
         openAllBtn.classList.remove('active');
     });
 
-    // console.log('✓ Open/Close All buttons setup complete');
+    // Initialize button active states based on current finger states
+    function updateButtonActiveStates() {
+        // Check current state of all fingers
+        const allOpen = fingerJointNames.every(jointName => {
+            const currentState = fingerStates.get(jointName) || 0;
+            return currentState === 0;
+        });
+
+        const allClosed = fingerJointNames.every(jointName => {
+            const currentState = fingerStates.get(jointName) || 0;
+            return currentState === 180;
+        });
+
+        // Update button visual states
+        openAllBtn.classList.toggle('active', allOpen);
+        closeAllBtn.classList.toggle('active', allClosed);
+    }
+
+    // Initial update of button states
+    updateButtonActiveStates();
+
+    // Also update button states when individual fingers are toggled
+    // We'll modify the updateIndividualButtonStates function to also update open/close buttons
+    const originalUpdateIndividualButtonStates = updateIndividualButtonStates;
+    updateIndividualButtonStates = function (fingerStates, fingerMap) {
+        originalUpdateIndividualButtonStates(fingerStates, fingerMap);
+        updateButtonActiveStates();
+    };
+
+    console.log('✓ Open/Close All buttons setup complete');
 }
 // HELPER FUNCTION: Update individual finger button visual states
 function updateIndividualButtonStates(fingerStates, fingerMap) {
@@ -1916,8 +1981,6 @@ export function buildFingerHierarchy(model, options = {}) {
 
         const modelPath = 'hand.glb';
         const fileExtension = modelPath.split('.').pop().toLowerCase();
-
-        // console.log('Attempting to load model:', modelPath);
 
         if (fileExtension === 'gltf' || fileExtension === 'glb') {
             loadGLTFModel(modelPath);
