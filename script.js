@@ -20,6 +20,16 @@ console.warn = function (...args) {
     originalWarn.apply(console, args);
 };
 
+// ============================================
+// GLOBAL FINGER MESHES OBJECT
+// ============================================
+let fingerMeshes = {
+    index: { base: null, mid: null, tip: null },
+    middle: { base: null, mid: null, tip: null },
+    pinky: { base: null, mid: null, tip: null },
+    ring: { base: null, mid: null, tip: null },
+    thumb: { base: null, mid: null, tip: null }
+};
 
 // ============================================
 // MQTT CONNECTION SETUP
@@ -138,8 +148,8 @@ function setupFingerButtons() {
         'Move Middle': 'MiddleFinger',
         'Move Ring': 'RingFinger',
         'Move Pinky': 'PinkyFinger',
-        'Move Thumb': 'ThumbUpDown',
-        'Move Thumb Sideways': 'ThumbSideways'
+        // 'Move Thumb': 'ThumbUpDown',
+        // 'Move Thumb Sideways': 'ThumbSideways'
     };
 
     // Track finger states for toggle functionality
@@ -169,6 +179,17 @@ function setupFingerButtons() {
                 // Send the value (isRadians = false because we're sending degrees)
                 publishJointValue(jointName, newValue, false);
 
+                // Apply visual curl for corresponding finger
+                const fingerKey = Object.keys(fingerMap).find(key => fingerMap[key] === jointName)?.toLowerCase();
+                if (fingerKey && fingerSegmentsMap.has(fingerKey)) {
+                    // Convert to boolean: 180 = curled (true), 0 = open (false)
+                    const shouldCurl = newValue === 180;
+                    applyFingerCurl(fingerKey, shouldCurl, {
+                        axis: 'x',
+                        angles: [-90, -90, -90]
+                    });
+                }
+
                 // Visual feedback
                 this.classList.toggle('active', newValue === 180);
 
@@ -187,7 +208,6 @@ function setupFingerButtons() {
         }
     });
 
-    console.log('✓ Finger buttons setup complete');
 
     // NEW: Add Open/Close All buttons functionality
     setupOpenCloseButtons(fingerMap, fingerStates);
@@ -310,7 +330,6 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
         updateButtonActiveStates();
     };
 
-    console.log('✓ Open/Close All buttons setup complete');
 }
 // HELPER FUNCTION: Update individual finger button visual states
 function updateIndividualButtonStates(fingerStates, fingerMap) {
@@ -343,12 +362,12 @@ const segmentInitialQuaternions = new WeakMap();   // mesh -> quaternion
 const fingerCurlState = new Map();                 // key -> boolean
 
 export const fingerCurlConfig = {
-    default: { axis: 'y', angles: [0, 0, 0] },
-    index: { axis: 'y', angles: [90, 90, 80] },
-    middle: { axis: 'y', angles: [90, 90, 80] },
-    ring: { axis: 'y', angles: [85, 85, 70] },
-    pinky: { axis: 'y', angles: [80, 95, 60] },
-    thumb: { axis: 'x', angles: [-50, -40, -30] }
+    default: { axis: 'x', angles: [-90, -90, -90] },  // Changed axis to 'x' and angles to negative 90
+    index: { axis: 'x', angles: [-90, -90, -90] },    // Changed axis to 'x' and angles to -90 for all fingers
+    middle: { axis: 'x', angles: [-90, -90, -90] },   // Changed axis to 'x' and angles to -90 for all fingers
+    ring: { axis: 'x', angles: [-90, -90, -90] },     // Changed axis to 'x' and angles to -90 for all fingers
+    pinky: { axis: 'x', angles: [-90, -90, -90] },    // Changed axis to 'x' and angles to -90 for all fingers
+    thumb: { axis: 'x', angles: [0, 0, 0] }           // Set thumb to 0 to prevent curling
 };
 
 export function rememberInitialRotation(segment) {
@@ -673,46 +692,117 @@ export function buildFingerHierarchy(model, options = {}) {
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
 
-        camera.position.set(5, 3, 5);
-        camera.lookAt(0, 1, 0);
+        // camera.position.set(5, 3, 5);
+        // camera.lookAt(0, 1, 0);
+
+        // // Add OrbitControls for mouse camera movement
+        // const controls = new OrbitControls(camera, renderer.domElement);
+        // controls.enableDamping = true; // Smooth camera movement
+        // controls.dampingFactor = 0.05;
+        // controls.screenSpacePanning = false;
+        // controls.minDistance = 3; // Minimum zoom distance
+        // controls.maxDistance = 15; // Maximum zoom distance
+        // controls.maxPolarAngle = Math.PI / 2; // Prevent camera going below ground
+        // controls.target.set(0, 1, 0); // Look at arm center
+
+        camera.position.set(2, 1, 5);  // Increase y from 3 to 4
+        camera.lookAt(0, 2, 0);        // Increase y from 1 to 2
 
         // Add OrbitControls for mouse camera movement
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true; // Smooth camera movement
         controls.dampingFactor = 0.05;
         controls.screenSpacePanning = false;
-        controls.minDistance = 3; // Minimum zoom distance
-        controls.maxDistance = 15; // Maximum zoom distance
+        controls.minDistance = 4; // Minimum zoom distance
+        controls.maxDistance = 5; // Maximum zoom distance
         controls.maxPolarAngle = Math.PI / 2; // Prevent camera going below ground
-        controls.target.set(0, 1, 0); // Look at arm center
+        controls.target.set(0, 3, 0); // Look at higher point
 
-        // Reduced lighting with shadows
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+        // ============================================
+        // COMPREHENSIVE SHADOW SYSTEM OVERHAUL
+        // ============================================
+
+        // In the initThreeJS() function, REPLACE the entire lighting and shadow section:
+
+        // NEW SHADOW SETTINGS - Much cleaner and higher quality
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
+        renderer.shadowMap.autoUpdate = true;
+
+        // 1. AMBIENT LIGHT - Soft overall illumination
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
         scene.add(ambientLight);
 
-        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.4);
-        directionalLight1.position.set(5, 5, 5);
-        directionalLight1.castShadow = true;
-        directionalLight1.shadow.mapSize.width = 2048;
-        directionalLight1.shadow.mapSize.height = 2048;
-        directionalLight1.shadow.camera.near = 0.5;
-        directionalLight1.shadow.camera.far = 50;
-        directionalLight1.shadow.camera.left = -10;
-        directionalLight1.shadow.camera.right = 10;
-        directionalLight1.shadow.camera.top = 10;
-        directionalLight1.shadow.camera.bottom = -10;
-        scene.add(directionalLight1);
+        // 2. MAIN KEY LIGHT - Clean, sharp shadows from top-right
+        const keyLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        keyLight.position.set(10, 15, 5); // High and to the right
+        keyLight.castShadow = true;
 
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.15);
-        directionalLight2.position.set(-5, 3, -5);
-        scene.add(directionalLight2);
+        // DRAMATICALLY IMPROVED SHADOW SETTINGS
+        keyLight.shadow.mapSize.width = 2048; // Reduced from 4096 - cleaner, less pixelated
+        keyLight.shadow.mapSize.height = 2048;
+        keyLight.shadow.camera.near = 0.5;
+        keyLight.shadow.camera.far = 50;
 
-        // Enable shadow rendering
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // Tighter shadow frustum for sharper shadows
+        keyLight.shadow.camera.left = -12;
+        keyLight.shadow.camera.right = 12;
+        keyLight.shadow.camera.top = 12;
+        keyLight.shadow.camera.bottom = -12;
+
+        // Cleaner shadow settings
+        keyLight.shadow.radius = 1; // Reduced for cleaner edges
+        keyLight.shadow.bias = -0.001; // Better for detailed models
+
+        scene.add(keyLight);
+
+        // 3. FILL LIGHT - Soft, shadow-less light from left
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.25);
+        fillLight.position.set(-10, 8, 0);
+        fillLight.castShadow = false; // No shadows from fill light
+        scene.add(fillLight);
+
+        // 4. RIM/BACK LIGHT - Subtle edge highlight
+        const rimLight = new THREE.DirectionalLight(0x88aaff, 0.15); // Slight blue tint
+        rimLight.position.set(-5, 5, -15);
+        rimLight.castShadow = false;
+        scene.add(rimLight);
+
+        // 5. FRONT ACCENT LIGHT - Specifically for hand details
+        const frontLight = new THREE.DirectionalLight(0xffffff, 0.2);
+        frontLight.position.set(0, 5, 10);
+        frontLight.castShadow = false;
+        scene.add(frontLight);
+
+        // Add this AFTER setting up the lights, but BEFORE loading the model:
+
+        // ============================================
+        // SHADOW RECEIVING GROUND PLANE
+        // ============================================
+        // Creates a clean surface for shadows to fall on
+
+        // Create a subtle ground plane for shadows
+        const groundGeometry = new THREE.PlaneGeometry(40, 40);
+        const groundMaterial = new THREE.ShadowMaterial({
+            color: 0x000000,
+            opacity: 0.15, // Very subtle shadow
+            transparent: true
+        });
+
+        const groundPlane = new THREE.Mesh(groundGeometry, groundMaterial);
+        groundPlane.rotation.x = -Math.PI / 2; // Make it horizontal
+        groundPlane.position.y = -2; // Position below the arm
+        groundPlane.receiveShadow = true; // Important: receives shadows
+        groundPlane.castShadow = false; // Doesn't cast shadows
+        scene.add(groundPlane);
+
+        // Optional: Add a subtle grid for spatial reference (disable if too distracting)
+        const gridHelper = new THREE.GridHelper(160, 100, 0x444444, 0x222222);
+        gridHelper.position.y = -0.01;
+        scene.add(gridHelper);
 
         // Add axes helper at origin, centered with arm, longer lines for better visibility
-        const axesHelper = new THREE.AxesHelper(8);
+        const axesHelper = new THREE.AxesHelper(80);
         scene.add(axesHelper);
 
         let model = null;
@@ -772,23 +862,40 @@ export function buildFingerHierarchy(model, options = {}) {
                     model.traverse(function (child) {
                         if (child.isMesh && child.visible) {
                             meshCount++;
+
+                            // Enable shadows on all arm meshes
                             child.castShadow = true;
                             child.receiveShadow = true;
 
-                            // Improve material visibility with better shading
+                            // IMPORTANT: Improve material for better shadow response
                             if (child.material) {
                                 if (Array.isArray(child.material)) {
                                     child.material.forEach(mat => {
                                         if (mat) {
-                                            mat.color.setHex(0xcccccc); // Slightly gray instead of pure white
-                                            mat.roughness = 0.7;
-                                            mat.metalness = 0.1;
+                                            // More realistic material settings
+                                            mat.color.setHex(0xe0e0e0); // Light gray
+                                            mat.roughness = 0.4; // Less rough = more reflection
+                                            mat.metalness = 0.05; // Very slight metallic sheen
+
+                                            // Ensure materials update properly
+                                            mat.needsUpdate = true;
+
+                                            // Add subtle specular highlights
+                                            if (mat.specular !== undefined) {
+                                                mat.specular.setHex(0x111111);
+                                            }
                                         }
                                     });
                                 } else {
-                                    child.material.color.setHex(0xcccccc); // Slightly gray instead of pure white
-                                    child.material.roughness = 0.7;
-                                    child.material.metalness = 0.1;
+                                    // Single material
+                                    child.material.color.setHex(0xe0e0e0);
+                                    child.material.roughness = 0.4;
+                                    child.material.metalness = 0.05;
+                                    child.material.needsUpdate = true;
+
+                                    if (child.material.specular !== undefined) {
+                                        child.material.specular.setHex(0x111111);
+                                    }
                                 }
                             }
                         }
@@ -1091,47 +1198,47 @@ export function buildFingerHierarchy(model, options = {}) {
                     const Palm_1 = findMeshByName('Palm_1');
 
                     // INDEX FINGER (parent groups: Index3_1_1, Index2_1_1, Index1_1)
-                    const Index3_1 = findMeshByName('Index3_1_1') || findMeshByName('Index3_1');
-                    const Index2_1 = findMeshByName('Index2_1_1') || findMeshByName('Index2_1');
-                    const Index1_1 = findMeshByName('Index1_1');
+                    fingerMeshes.index.base = findMeshByName('Index3_1_1') || findMeshByName('Index3_1');
+                    fingerMeshes.index.mid = findMeshByName('Index2_1_1') || findMeshByName('Index2_1');
+                    fingerMeshes.index.tip = findMeshByName('Index1_1');
 
                     // MIDDLE FINGER (parent groups: Midle3_1_1, Midle2_1_1, Middle1_1) - note spelling!
-                    const Middle3_1 = findMeshByName('Midle3_1_1') || findMeshByName('Middle3_1_1') || findMeshByName('Middle3_1');
-                    const Middle2_1 = findMeshByName('Midle2_1_1') || findMeshByName('Middle2_1_1') || findMeshByName('Middle2_1');
-                    const Middle1_1 = findMeshByName('Middle1_1');
+                    fingerMeshes.middle.base = findMeshByName('Midle3_1_1') || findMeshByName('Middle3_1_1') || findMeshByName('Middle3_1');
+                    fingerMeshes.middle.mid = findMeshByName('Midle2_1_1') || findMeshByName('Middle2_1_1') || findMeshByName('Middle2_1');
+                    fingerMeshes.middle.tip = findMeshByName('Middle1_1');
 
                     // PINKY FINGER (parent groups: Pinky3_1_1, Pinky2_1, Pinky1_1)
-                    const Pinky3_1 = findMeshByName('Pinky3_1_1') || findMeshByName('Pinky3_1');
-                    const Pinky2_1 = findMeshByName('Pinky2_1');
-                    const Pinky1_1 = findMeshByName('Pinky1_1');
+                    fingerMeshes.pinky.base = findMeshByName('Pinky3_1_1') || findMeshByName('Pinky3_1');
+                    fingerMeshes.pinky.mid = findMeshByName('Pinky2_1');
+                    fingerMeshes.pinky.tip = findMeshByName('Pinky1_1');
 
                     // RING FINGER (parent groups: Ring3_1_1, Ring2_1, Ring1_1)
-                    const Ring3_1 = findMeshByName('Ring3_1_1') || findMeshByName('Ring3_1');
-                    const Ring2_1 = findMeshByName('Ring2_1');
-                    const Ring1_1 = findMeshByName('Ring1_1');
+                    fingerMeshes.ring.base = findMeshByName('Ring3_1_1') || findMeshByName('Ring3_1');
+                    fingerMeshes.ring.mid = findMeshByName('Ring2_1');
+                    fingerMeshes.ring.tip = findMeshByName('Ring1_1');
 
                     // THUMB (parent groups: Thumb3_1_1, Thumb2_1_1, Thumb1_1)
-                    const Thumb3_1 = findMeshByName('Thumb3_1_1') || findMeshByName('Thumb3_1');
-                    const Thumb2_1 = findMeshByName('Thumb2_1_1') || findMeshByName('Thumb2_1');
-                    const Thumb1_1 = findMeshByName('Thumb1_1');
+                    fingerMeshes.thumb.base = findMeshByName('Thumb3_1_1') || findMeshByName('Thumb3_1');
+                    fingerMeshes.thumb.mid = findMeshByName('Thumb2_1_1') || findMeshByName('Thumb2_1');
+                    fingerMeshes.thumb.tip = findMeshByName('Thumb1_1');
 
                     // Summary of finger search results
                     const fingerResults = {
-                        'Index3 (Index3_1_1)': Index3_1,
-                        'Index2 (Index2_1_1)': Index2_1,
-                        'Index1 (Index1_1)': Index1_1,
-                        'Middle3 (Midle3_1_1)': Middle3_1,
-                        'Middle2 (Midle2_1_1)': Middle2_1,
-                        'Middle1 (Middle1_1)': Middle1_1,
-                        'Pinky3 (Pinky3_1_1)': Pinky3_1,
-                        'Pinky2 (Pinky2_1)': Pinky2_1,
-                        'Pinky1 (Pinky1_1)': Pinky1_1,
-                        'Ring3 (Ring3_1_1)': Ring3_1,
-                        'Ring2 (Ring2_1)': Ring2_1,
-                        'Ring1 (Ring1_1)': Ring1_1,
-                        'Thumb3 (Thumb3_1_1)': Thumb3_1,
-                        'Thumb2 (Thumb2_1_1)': Thumb2_1,
-                        'Thumb1 (Thumb1_1)': Thumb1_1
+                        'Index3 (Index3_1_1)': fingerMeshes.index.base,
+                        'Index2 (Index2_1_1)': fingerMeshes.index.mid,
+                        'Index1 (Index1_1)': fingerMeshes.index.tip,
+                        'Middle3 (Midle3_1_1)': fingerMeshes.middle.base,
+                        'Middle2 (Midle2_1_1)': fingerMeshes.middle.mid,
+                        'Middle1 (Middle1_1)': fingerMeshes.middle.tip,
+                        'Pinky3 (Pinky3_1_1)': fingerMeshes.pinky.base,
+                        'Pinky2 (Pinky2_1)': fingerMeshes.pinky.mid,
+                        'Pinky1 (Pinky1_1)': fingerMeshes.pinky.tip,
+                        'Ring3 (Ring3_1_1)': fingerMeshes.ring.base,
+                        'Ring2 (Ring2_1)': fingerMeshes.ring.mid,
+                        'Ring1 (Ring1_1)': fingerMeshes.ring.tip,
+                        'Thumb3 (Thumb3_1_1)': fingerMeshes.thumb.base,
+                        'Thumb2 (Thumb2_1_1)': fingerMeshes.thumb.mid,
+                        'Thumb1 (Thumb1_1)': fingerMeshes.thumb.tip
                     };
 
                     const foundFingers = Object.entries(fingerResults).filter(([name, obj]) => obj !== null);
@@ -1146,22 +1253,24 @@ export function buildFingerHierarchy(model, options = {}) {
                         });
                     }
                     // ADDITIONAL: Search for finger parent groups that contain the actual meshes
-                    const allFoundFingers = [Index3_1, Index2_1, Index1_1,
-                        Middle3_1, Middle2_1, Middle1_1,
-                        Pinky3_1, Pinky2_1, Pinky1_1,
-                        Ring3_1, Ring2_1, Ring1_1,
-                        Thumb3_1, Thumb2_1, Thumb1_1].filter(f => f !== null);
+                    const allFoundFingers = [
+                        fingerMeshes.index.base, fingerMeshes.index.mid, fingerMeshes.index.tip,
+                        fingerMeshes.middle.base, fingerMeshes.middle.mid, fingerMeshes.middle.tip,
+                        fingerMeshes.pinky.base, fingerMeshes.pinky.mid, fingerMeshes.pinky.tip,
+                        fingerMeshes.ring.base, fingerMeshes.ring.mid, fingerMeshes.ring.tip,
+                        fingerMeshes.thumb.base, fingerMeshes.thumb.mid, fingerMeshes.thumb.tip
+                    ].filter(f => f !== null);
 
                     allFoundFingers.forEach(finger => {
                     });
 
                     // Log found objects
                     const armObjects = [Mbajtesi_1, Shoulder_1, Biceps_up_1, Biceps_low_1, Forearm_1, Palm_1,
-                        Index3_1, Index2_1, Index1_1,
-                        Middle3_1, Middle2_1, Middle1_1,
-                        Pinky3_1, Pinky2_1, Pinky1_1,
-                        Ring3_1, Ring2_1, Ring1_1,
-                        Thumb3_1, Thumb2_1, Thumb1_1];
+                        fingerMeshes.index.base, fingerMeshes.index.mid, fingerMeshes.index.tip,
+                        fingerMeshes.middle.base, fingerMeshes.middle.mid, fingerMeshes.middle.tip,
+                        fingerMeshes.pinky.base, fingerMeshes.pinky.mid, fingerMeshes.pinky.tip,
+                        fingerMeshes.ring.base, fingerMeshes.ring.mid, fingerMeshes.ring.tip,
+                        fingerMeshes.thumb.base, fingerMeshes.thumb.mid, fingerMeshes.thumb.tip];
 
                     // STEP 2: Preserve current world positions and rotations
                     // Store world matrix of each object to maintain exact placement
@@ -1179,11 +1288,11 @@ export function buildFingerHierarchy(model, options = {}) {
 
                     // Remove ALL finger parent groups from their current parents
                     const allFingerSegments = [
-                        Index3_1, Index2_1, Index1_1,
-                        Middle3_1, Middle2_1, Middle1_1,
-                        Pinky3_1, Pinky2_1, Pinky1_1,
-                        Ring3_1, Ring2_1, Ring1_1,
-                        Thumb3_1, Thumb2_1, Thumb1_1
+                        fingerMeshes.index.base, fingerMeshes.index.mid, fingerMeshes.index.tip,
+                        fingerMeshes.middle.base, fingerMeshes.middle.mid, fingerMeshes.middle.tip,
+                        fingerMeshes.pinky.base, fingerMeshes.pinky.mid, fingerMeshes.pinky.tip,
+                        fingerMeshes.ring.base, fingerMeshes.ring.mid, fingerMeshes.ring.tip,
+                        fingerMeshes.thumb.base, fingerMeshes.thumb.mid, fingerMeshes.thumb.tip
                     ];
 
                     // Forearm_1 -> Palm_1
@@ -1672,6 +1781,13 @@ export function buildFingerHierarchy(model, options = {}) {
 
             // Update world matrices after any hierarchy fixes
             model.updateMatrixWorld(true);
+            // ============================================
+            // REGISTER FINGER SEGMENTS FOR CURLING SYSTEM
+            // ============================================
+            // Create finger segments object for registration
+
+            // Register the finger segments
+            registerFingerSegments(fingerMeshes);
 
             return allFound;
         }
