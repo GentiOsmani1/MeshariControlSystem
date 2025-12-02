@@ -1924,7 +1924,7 @@ export function buildFingerHierarchy(model, options = {}) {
             isAnimating: false
         }));
 
-        const MOVEMENT_SPEED = 40; // degrees per second (matches reset animation speed)
+        const MOVEMENT_SPEED = 50; // degrees per second (matches reset animation speed)
 
         function animateSliderToTarget(sliderIndex, slider, displayElement, rotateFunction, label) {
             const animation = sliderAnimations[sliderIndex];
@@ -2070,6 +2070,417 @@ export function buildFingerHierarchy(model, options = {}) {
                     }
                 });
             });
+        }
+
+        // ============================================
+        // GRAB WATER BUTTON FUNCTIONALITY
+        // ============================================
+
+        const grabWaterBtn = document.getElementById('grabWaterBtn');
+        if (grabWaterBtn) {
+            grabWaterBtn.addEventListener('click', function () {
+                console.log('💧 Starting Grab Water sequence');
+
+                // Disable button during animation
+                grabWaterBtn.disabled = true;
+                grabWaterBtn.textContent = 'Grabbing...';
+
+                // Execute the complete Grab Water sequence
+                executeGrabWaterSequence();
+            });
+        }
+
+        function executeGrabWaterSequence() {
+            console.log('1. Starting grab sequence');
+
+            // Step 1: Elbow to 98.5°
+            moveJoint('Elbow', 98.5, 0, rotateElbow, function () {
+                // Step 2: Biceps to 25.3°
+                moveJoint('Biceps', 25.3, 1, rotateBiceps, function () {
+                    // Step 3: Elbow to 84.4°
+                    moveJoint('Elbow', 84.4, 0, rotateElbow, function () {
+                        // Step 4: Close all fingers and wait 3 seconds
+                        console.log('4. Closing all fingers');
+                        closeAllFingers(function () {
+                            setTimeout(function () {
+                                // Step 5: Elbow to 104.6°
+                                moveJoint('Elbow', 104.6, 0, rotateElbow, function () {
+                                    // Step 6: Biceps to -5°
+                                    moveJoint('Biceps', -5, 1, rotateBiceps, function () {
+                                        // Step 7: Elbow to 0°
+                                        moveJoint('Elbow', 0, 0, rotateElbow, function () {
+                                            // Wait 5 seconds
+                                            setTimeout(function () {
+                                                console.log('8. Starting pour sequence');
+                                                // Step 8: Elbow to 104.6°
+                                                moveJoint('Elbow', 104.6, 0, rotateElbow, function () {
+                                                    // Step 9: Biceps to 25.3°
+                                                    moveJoint('Biceps', 25.3, 1, rotateBiceps, function () {
+                                                        // Step 10: Elbow to 84.4°
+                                                        moveJoint('Elbow', 84.4, 0, rotateElbow, function () {
+                                                            // Step 11: Open fingers
+                                                            console.log('11. Opening fingers');
+                                                            openAllFingers(function () {
+                                                                // Step 12: Elbow to 104.6°
+                                                                moveJoint('Elbow', 104.6, 0, rotateElbow, function () {
+                                                                    // Step 13: Biceps to -5°
+                                                                    moveJoint('Biceps', -5, 1, rotateBiceps, function () {
+                                                                        // Step 14: Elbow to 0°
+                                                                        moveJoint('Elbow', 0, 0, rotateElbow, function () {
+                                                                            // Step 15: Biceps to 0° (final reset)
+                                                                            moveJoint('Biceps', 0, 1, rotateBiceps, function () {
+                                                                                // Sequence complete
+                                                                                console.log('✅ Grab Water sequence complete');
+                                                                                if (grabWaterBtn) {
+                                                                                    grabWaterBtn.disabled = false;
+                                                                                    grabWaterBtn.textContent = 'Grab Water';
+                                                                                }
+                                                                            });
+                                                                        });
+                                                                    });
+                                                                });
+                                                            });
+                                                        });
+                                                    });
+                                                });
+                                            }, 5000); // Wait 5 seconds
+                                        });
+                                    });
+                                });
+                            }, 3000); // Wait 3 seconds with closed fingers
+                        });
+                    });
+                });
+            });
+        }
+
+        // Helper function to move a joint
+        function moveJoint(jointName, targetValue, sliderIndex, rotateFunction, callback) {
+            console.log(`  Moving ${jointName} to ${targetValue}°`);
+
+            // Set target value
+            sliderAnimations[sliderIndex].targetValue = targetValue;
+
+            // Update slider visual position
+            if (activeSliders[sliderIndex]) {
+                if (jointName === 'Shoulder') {
+                    activeSliders[sliderIndex].value = -targetValue; // Invert for shoulder
+                } else {
+                    activeSliders[sliderIndex].value = targetValue;
+                }
+            }
+
+            // Start animation
+            if (!sliderAnimations[sliderIndex].isAnimating) {
+                sliderAnimations[sliderIndex].isAnimating = true;
+                sliderAnimations[sliderIndex].lastTime = Date.now();
+
+                const displayElement = activeSliders[sliderIndex]?.parentElement?.querySelector('.slider-value-display');
+
+                animateSliderToTarget(
+                    sliderIndex,
+                    activeSliders[sliderIndex],
+                    displayElement,
+                    rotateFunction,
+                    jointName
+                );
+            }
+
+            // Wait for completion
+            const checkComplete = () => {
+                const anim = sliderAnimations[sliderIndex];
+                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
+                    // Add small delay before next movement
+                    setTimeout(callback, 500);
+                } else {
+                    setTimeout(checkComplete, 100);
+                }
+            };
+
+            setTimeout(checkComplete, 100);
+        }
+
+        // Function to close all fingers
+        function closeAllFingers(callback) {
+            // Find the Close Fingers button and simulate click
+            const closeAllBtn = document.querySelector('.finger-btn');
+            let foundCloseBtn = null;
+
+            document.querySelectorAll('.finger-btn').forEach(btn => {
+                if (btn.textContent.trim() === 'Close Fingers') {
+                    foundCloseBtn = btn;
+                }
+            });
+
+            if (foundCloseBtn) {
+                foundCloseBtn.click();
+
+                // Also close individual fingers to ensure visual feedback
+                const individualFingerBtns = document.querySelectorAll('.individual-finger-btn');
+                individualFingerBtns.forEach(btn => {
+                    const text = btn.textContent.trim();
+                    if (text === 'Move Index' || text === 'Move Middle' ||
+                        text === 'Move Ring' || text === 'Move Pinky') {
+                        if (!btn.classList.contains('active')) {
+                            btn.click();
+                        }
+                    }
+                });
+            }
+
+            // Wait a moment for fingers to close
+            setTimeout(callback, 1000);
+        }
+
+        // Function to open all fingers
+        function openAllFingers(callback) {
+            // Find the Open Fingers button and simulate click
+            const openAllBtn = document.querySelector('.finger-btn');
+            let foundOpenBtn = null;
+
+            document.querySelectorAll('.finger-btn').forEach(btn => {
+                if (btn.textContent.trim() === 'Open Fingers') {
+                    foundOpenBtn = btn;
+                }
+            });
+
+            if (foundOpenBtn) {
+                foundOpenBtn.click();
+
+                // Also open individual fingers to ensure visual feedback
+                const individualFingerBtns = document.querySelectorAll('.individual-finger-btn');
+                individualFingerBtns.forEach(btn => {
+                    const text = btn.textContent.trim();
+                    if (text === 'Move Index' || text === 'Move Middle' ||
+                        text === 'Move Ring' || text === 'Move Pinky') {
+                        if (btn.classList.contains('active')) {
+                            btn.click();
+                        }
+                    }
+                });
+            }
+
+            // Wait a moment for fingers to open
+            setTimeout(callback, 1000);
+        }
+
+        // ============================================
+        // HELLO MOVEMENT BUTTON FUNCTIONALITY - SIMPLIFIED
+        // ============================================
+
+        const helloMovementBtn = document.getElementById('helloMovementBtn');
+        if (helloMovementBtn) {
+            helloMovementBtn.addEventListener('click', function () {
+                console.log('👋 Starting Hello Movement sequence');
+
+                // Disable button during animation
+                helloMovementBtn.disabled = true;
+                helloMovementBtn.textContent = 'Moving...';
+
+                // Execute the complete sequence
+                executeHelloSequence();
+            });
+        }
+
+        function executeHelloSequence() {
+            // STEP 1: Move to initial Hello position
+            console.log('1. Moving to initial Hello position');
+
+            const initialSequence = [
+                { joint: 'Elbow', value: 100, index: 0, rotateFunc: rotateElbow },
+                { joint: 'Shoulder', value: -79.6, index: 2, rotateFunc: rotateShoulder },
+                { joint: 'ShoulderBlade', value: 77.1, index: 3, rotateFunc: rotateShoulderBlade },
+                { joint: 'Biceps', value: -11.3, index: 1, rotateFunc: rotateBiceps },
+            ];
+
+            // Execute initial sequence
+            executeSequenceStep(initialSequence, 0, function () {
+                console.log('2. Starting wave motion (3 cycles)');
+                startWaveMotion(0);
+            });
+        }
+
+        function executeSequenceStep(sequence, stepIndex, callback) {
+            if (stepIndex >= sequence.length) {
+                if (callback) callback();
+                return;
+            }
+
+            const movement = sequence[stepIndex];
+            // console.log(`  Moving ${movement.joint} to ${movement.value}°`);
+
+            // Set target
+            sliderAnimations[movement.index].targetValue = movement.value;
+
+            // Update slider display
+            if (activeSliders[movement.index]) {
+                if (movement.joint === 'Shoulder') {
+                    activeSliders[movement.index].value = -movement.value; // Invert for shoulder
+                } else {
+                    activeSliders[movement.index].value = movement.value;
+                }
+            }
+
+            // Start animation
+            if (!sliderAnimations[movement.index].isAnimating) {
+                sliderAnimations[movement.index].isAnimating = true;
+                sliderAnimations[movement.index].lastTime = Date.now();
+
+                const displayElement = activeSliders[movement.index]?.parentElement?.querySelector('.slider-value-display');
+
+                animateSliderToTarget(
+                    movement.index,
+                    activeSliders[movement.index],
+                    displayElement,
+                    movement.rotateFunc,
+                    movement.joint
+                );
+            }
+
+            // Wait for completion
+            const checkComplete = () => {
+                const anim = sliderAnimations[movement.index];
+                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
+                    // Move to next step after delay
+                    setTimeout(() => {
+                        executeSequenceStep(sequence, stepIndex + 1, callback);
+                    }, 500);
+                } else {
+                    setTimeout(checkComplete, 100);
+                }
+            };
+
+            setTimeout(checkComplete, 100);
+        }
+
+        function startWaveMotion(waveCount) {
+            if (waveCount >= 3) {
+                // Done with waves, reset to initial wave position (80°)
+                // console.log('3. Resetting to wave start position (80°)');
+                resetToWaveStart(function () {
+                    // STEP 4: Reset entire arm to start position (0°)
+                    // console.log('4. Resetting entire arm to start position');
+                    resetArmToStart();
+                });
+                return;
+            }
+
+            // console.log(`  Wave ${waveCount + 1}: 80° -> 110°`);
+
+            // Move to 110°
+            sliderAnimations[0].targetValue = 110;
+            if (activeSliders[0]) activeSliders[0].value = 110;
+
+            if (!sliderAnimations[0].isAnimating) {
+                sliderAnimations[0].isAnimating = true;
+                sliderAnimations[0].lastTime = Date.now();
+
+                const displayElement = activeSliders[0]?.parentElement?.querySelector('.slider-value-display');
+                animateSliderToTarget(0, activeSliders[0], displayElement, rotateElbow, 'Elbow');
+            }
+
+            // Wait for 110°
+            const check110 = () => {
+                const anim = sliderAnimations[0];
+                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
+                    setTimeout(() => {
+                        console.log(`  Wave ${waveCount + 1}: 110° -> 80°`);
+
+                        // Move to 80°
+                        sliderAnimations[0].targetValue = 80;
+                        if (activeSliders[0]) activeSliders[0].value = 80;
+
+                        if (!sliderAnimations[0].isAnimating) {
+                            sliderAnimations[0].isAnimating = true;
+                            sliderAnimations[0].lastTime = Date.now();
+
+                            const displayElement = activeSliders[0]?.parentElement?.querySelector('.slider-value-display');
+                            animateSliderToTarget(0, activeSliders[0], displayElement, rotateElbow, 'Elbow');
+                        }
+
+                        // Wait for 80°
+                        const check80 = () => {
+                            const anim = sliderAnimations[0];
+                            if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
+                                // Next wave
+                                setTimeout(() => {
+                                    startWaveMotion(waveCount + 1);
+                                }, 300);
+                            } else {
+                                setTimeout(check80, 100);
+                            }
+                        };
+
+                        setTimeout(check80, 100);
+                    }, 300);
+                } else {
+                    setTimeout(check110, 100);
+                }
+            };
+
+            setTimeout(check110, 100);
+        }
+
+        function resetToWaveStart(callback) {
+            // Reset elbow to 80° (wave start position)
+            sliderAnimations[0].targetValue = 80;
+            if (activeSliders[0]) activeSliders[0].value = 80;
+
+            if (!sliderAnimations[0].isAnimating) {
+                sliderAnimations[0].isAnimating = true;
+                sliderAnimations[0].lastTime = Date.now();
+
+                const displayElement = activeSliders[0]?.parentElement?.querySelector('.slider-value-display');
+                animateSliderToTarget(0, activeSliders[0], displayElement, rotateElbow, 'Elbow');
+            }
+
+            const checkReset = () => {
+                const anim = sliderAnimations[0];
+                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
+                    setTimeout(callback, 500);
+                } else {
+                    setTimeout(checkReset, 100);
+                }
+            };
+
+            setTimeout(checkReset, 100);
+        }
+
+        function resetArmToStart() {
+            // Reset all sliders to 0° using existing reset system
+            activeSliders.forEach((slider, index) => {
+                sliderAnimations[index].targetValue = 0;
+
+                if (!sliderAnimations[index].isAnimating) {
+                    const displayElement = slider.parentElement.querySelector('.slider-value-display');
+                    sliderAnimations[index].isAnimating = true;
+                    sliderAnimations[index].lastTime = Date.now();
+
+                    const rotateFunction = [rotateElbow, rotateBiceps, rotateShoulder, rotateShoulderBlade][index];
+                    const label = ['Elbow', 'Biceps', 'Shoulder', 'Shoulder Blade'][index];
+
+                    animateSliderToTarget(index, slider, displayElement, rotateFunction, label);
+                }
+            });
+
+            // Wait for all to complete
+            const checkAllComplete = () => {
+                const allComplete = sliderAnimations.every(anim =>
+                    Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating
+                );
+
+                if (allComplete) {
+                    // console.log('✅ Hello Movement sequence complete');
+                    if (helloMovementBtn) {
+                        helloMovementBtn.disabled = false;
+                        helloMovementBtn.textContent = 'Hello Movement';
+                    }
+                } else {
+                    setTimeout(checkAllComplete, 500);
+                }
+            };
+
+            setTimeout(checkAllComplete, 500);
         }
 
         function animate() {
