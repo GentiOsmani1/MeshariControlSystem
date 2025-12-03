@@ -37,13 +37,12 @@ let fingerMeshes = {
 
 // Replace these with YOUR HiveMQ Cloud credentials
 const MQTT_CONFIG = {
-    host: 'wss://751563c505a94e2ea912e4e3554f7d93.s1.eu.hivemq.cloud:8884/mqtt',
+    host: 'wss://broker.hivemq.com:8884/mqtt',
     options: {
-        username: 'IsaRobotics',      // Replace with your username
-        password: 'Isa12345678',      // Replace with your password
         clientId: 'meshari_' + Math.random().toString(16).substr(2, 8),
         clean: true,
-        reconnectPeriod: 1000
+        reconnectPeriod: 1000,
+        keepalive: 60
     }
 };
 
@@ -126,7 +125,7 @@ function publishJointValue(jointName, value, isRadians = true) {
     const message = '"' + jointName + '", "' + valueToSend + '"';
 
     mqttClient.publish(
-        'meshari/sliders',              // Topic name
+        'meshari/output',              // Topic name
         message,                        // Message payload (plain string)
         { qos: 0 }                      // Quality of Service
     );
@@ -135,8 +134,18 @@ function publishJointValue(jointName, value, isRadians = true) {
 }
 
 function publishSliderValue(sliderName, value) {
+    // Map human-readable names to numeric IDs for MQTT
+    const jointNameMap = {
+        'Elbow': '2',
+        'Shoulder': '3',
+        'ShoulderBlade': '4',
+        'Biceps': '5'
+    };
+
+    // Convert slider name to numeric ID
+    const jointId = jointNameMap[sliderName] || sliderName;
     // Call the unified function with isRadians = true
-    publishJointValue(sliderName, value, true);
+    publishJointValue(jointId, value, true);
 }
 
 function setupFingerButtons() {
@@ -1994,7 +2003,7 @@ export function buildFingerHierarchy(model, options = {}) {
         activeSliders[0].addEventListener('input', function () {
             const displayElement = this.parentElement.querySelector('.slider-value-display');
             startSliderAnimation(0, this, displayElement, rotateElbow, 'Elbow');
-            // Publish to MQTT
+            // Publish to MQTT - will be converted to "2" in publishSliderValue
             publishSliderValue('Elbow', parseFloat(this.value));
         });
 
@@ -2004,7 +2013,7 @@ export function buildFingerHierarchy(model, options = {}) {
             activeSliders[1].addEventListener('input', function () {
                 const displayElement = this.parentElement.querySelector('.slider-value-display');
                 startSliderAnimation(1, this, displayElement, rotateBiceps, 'Biceps');
-                // Publish to MQTT
+                // Publish to MQTT - will be converted to "5" in publishSliderValue
                 publishSliderValue('Biceps', parseFloat(this.value));
             });
         }
@@ -2015,22 +2024,19 @@ export function buildFingerHierarchy(model, options = {}) {
         if (activeSliders[2]) {
             activeSliders[2].addEventListener('input', function () {
                 const displayElement = this.parentElement.querySelector('.slider-value-display');
-                // Create a temporary slider-like object with inverted value
                 const invertedSlider = {
                     value: -parseFloat(this.value)  // Invert the value
                 };
-                // Update display to show the actual negative value
                 if (displayElement) {
                     displayElement.textContent = invertedSlider.value.toFixed(1) + '°';
                 }
-                // Pass the inverted value
                 sliderAnimations[2].targetValue = invertedSlider.value;
                 if (!sliderAnimations[2].isAnimating) {
                     sliderAnimations[2].isAnimating = true;
                     sliderAnimations[2].lastTime = Date.now();
                     animateSliderToTarget(2, this, displayElement, rotateShoulder, 'Shoulder');
                 }
-                // Publish to MQTT (send the inverted value)
+                // Publish to MQTT - will be converted to "3" in publishSliderValue
                 publishSliderValue('Shoulder', invertedSlider.value);
             });
         }
@@ -2041,7 +2047,7 @@ export function buildFingerHierarchy(model, options = {}) {
             activeSliders[3].addEventListener('input', function () {
                 const displayElement = this.parentElement.querySelector('.slider-value-display');
                 startSliderAnimation(3, this, displayElement, rotateShoulderBlade, 'Shoulder Blade');
-                // Publish to MQTT
+                // Publish to MQTT - will be converted to "4" in publishSliderValue
                 publishSliderValue('ShoulderBlade', parseFloat(this.value));
             });
         }
@@ -2050,12 +2056,7 @@ export function buildFingerHierarchy(model, options = {}) {
         const resetBtn = document.getElementById('resetSlidersBtn');
         if (resetBtn) {
             resetBtn.addEventListener('click', function () {
-                // console.log('Gradually resetting all sliders to 0°');
-
-                // Update animation targets to 0 for all sliders
-                // MQTT values will be published gradually during the animation
                 activeSliders.forEach((slider, index) => {
-                    // For SHOULDER slider (index 2), target is 0 (which will reset slider to left position)
                     sliderAnimations[index].targetValue = 0;
 
                     if (!sliderAnimations[index].isAnimating) {
@@ -2155,6 +2156,7 @@ export function buildFingerHierarchy(model, options = {}) {
         }
 
         // Helper function to move a joint
+        // Helper function to move a joint
         function moveJoint(jointName, targetValue, sliderIndex, rotateFunction, callback) {
             console.log(`  Moving ${jointName} to ${targetValue}°`);
 
@@ -2177,12 +2179,22 @@ export function buildFingerHierarchy(model, options = {}) {
 
                 const displayElement = activeSliders[sliderIndex]?.parentElement?.querySelector('.slider-value-display');
 
+                // Map joint name for MQTT publication
+                const mqttJointMap = {
+                    'Elbow': '2',
+                    'Biceps': '5',
+                    'Shoulder': '3',
+                    'ShoulderBlade': '4'
+                };
+
+                const mqttLabel = mqttJointMap[jointName] || jointName;
+
                 animateSliderToTarget(
                     sliderIndex,
                     activeSliders[sliderIndex],
                     displayElement,
                     rotateFunction,
-                    jointName
+                    mqttLabel
                 );
             }
 
