@@ -72,8 +72,7 @@ body {
 }
 
 .reset-sliders-btn:hover {
-    background: #575761;
-    border-color: #5a9fff;
+    background: #31588d;
 }
 
 .reset-sliders-btn:active {
@@ -174,6 +173,22 @@ body {
     background: #6aafff;
 }
 
+.slider:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.slider-wrapper.disabled {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* Visual feedback for active movement buttons */
+.movement-btn.active {
+    background: #31588d;
+    box-shadow: 0 2px 15px 0 rgba(69, 85, 155, 0.5);
+}
+
 .movement-section {
     grid-column: 3;
     grid-row: 1;
@@ -201,7 +216,7 @@ body {
 }
 
 .movement-btn:hover {
-    background: #575761;
+    background: #31588d;
 }
 
 .movement-btn:active {
@@ -230,7 +245,7 @@ body {
 }
 
 .finger-btn:hover {
-    background: #575761;
+    background: #31588d;
 }
 
 .finger-btn:active {
@@ -261,7 +276,7 @@ body {
 }
 
 .individual-finger-btn:hover {
-    background: #575761;
+    background: #31588d;
 }
 
 .individual-finger-btn:active {
@@ -300,8 +315,7 @@ body {
 }
 
 .axis-label {
-    font-size: 24px;
-    font-weight: bold;
+    font-size: 7px;
     font-family: 'Arial', sans-serif;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
     line-height: 1;

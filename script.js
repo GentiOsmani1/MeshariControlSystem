@@ -134,15 +134,15 @@ function publishJointValue(jointName, value, isRadians = true) {
 }
 
 function publishSliderValue(sliderName, value) {
-    // Map human-readable names to numeric IDs for MQTT
+    // Map human-readable names to custom IDs for MQTT
     const jointNameMap = {
-        'Elbow': '2',
-        'Shoulder': '3',
-        'ShoulderBlade': '4',
-        'Biceps': '5'
+        'Elbow': 'Brryli',
+        'Shoulder': 'Krahu',
+        'ShoulderBlade': 'Mbajtesi',
+        'Biceps': 'Biceps'
     };
 
-    // Convert slider name to numeric ID
+    // Convert slider name to custom ID
     const jointId = jointNameMap[sliderName] || sliderName;
     // Call the unified function with isRadians = true
     publishJointValue(jointId, value, true);
@@ -220,6 +220,120 @@ function setupFingerButtons() {
 
     // NEW: Add Open/Close All buttons functionality
     setupOpenCloseButtons(fingerMap, fingerStates);
+}
+
+
+// ============================================
+// SLIDER CONTROL UTILITY FUNCTIONS
+// ============================================
+
+// Disable all sliders during automated movement
+let activeSliders = [];
+
+// Disable all sliders during automated movement
+function disableAllSliders() {
+    if (!activeSliders || activeSliders.length === 0) {
+        console.warn('No active sliders found to disable');
+        return;
+    }
+    activeSliders.forEach(slider => {
+        slider.disabled = true;
+        // Also disable the wrapper for visual feedback
+        const wrapper = slider.closest('.slider-wrapper');
+        if (wrapper) {
+            wrapper.classList.add('disabled');
+        }
+    });
+
+    // Also disable the reset button
+    const resetBtn = document.getElementById('resetSlidersBtn');
+    if (resetBtn) {
+        resetBtn.disabled = true;
+        resetBtn.style.opacity = '0.5';
+    }
+}
+
+// Enable all sliders after automated movement
+function enableAllSliders() {
+    if (!activeSliders || activeSliders.length === 0) {
+        console.warn('No active sliders found to enable');
+        return;
+    }
+
+    activeSliders.forEach(slider => {
+        slider.disabled = false;
+        // Remove disabled wrapper class
+        const wrapper = slider.closest('.slider-wrapper');
+        if (wrapper) {
+            wrapper.classList.remove('disabled');
+        }
+    });
+
+    // Enable the reset button
+    const resetBtn = document.getElementById('resetSlidersBtn');
+    if (resetBtn) {
+        resetBtn.disabled = false;
+        resetBtn.style.opacity = '1';
+    }
+}
+
+// Disable finger buttons during automated movement
+function disableFingerButtons() {
+    const fingerButtons = document.querySelectorAll('.finger-btn, .individual-finger-btn');
+    fingerButtons.forEach(button => {
+        button.disabled = true;
+        button.style.opacity = '0.5';
+        button.style.cursor = 'not-allowed';
+    });
+}
+
+// Enable finger buttons after automated movement
+function enableFingerButtons() {
+    const fingerButtons = document.querySelectorAll('.finger-btn, .individual-finger-btn');
+    fingerButtons.forEach(button => {
+        button.disabled = false;
+        button.style.opacity = '1';
+        button.style.cursor = 'pointer';
+    });
+}
+
+// Track if any movement is active
+let isMovementActive = false;
+
+// Function to start any movement sequence
+function startMovementSequence() {
+    isMovementActive = true;
+    disableAllSliders();
+    disableFingerButtons();
+
+    // Add visual indicator
+    const statusElement = document.getElementById('mqttStatus');
+    if (statusElement) {
+        statusElement.textContent = '🟡 Movement Active';
+        statusElement.style.color = '#ff9900';
+    }
+}
+
+// Function to end any movement sequence
+function endMovementSequence() {
+    isMovementActive = false;
+    enableAllSliders();
+    enableFingerButtons();
+
+    // Restore MQTT status
+    if (mqttClient && mqttClient.connected) {
+        const statusElement = document.getElementById('mqttStatus');
+        if (statusElement) {
+            statusElement.textContent = '🟢 Connected to MQTT';
+            statusElement.style.color = '#00ff00';
+        }
+    }
+
+    // Remove active class from all movement buttons
+    const movementBtns = document.querySelectorAll('.movement-btn');
+    movementBtns.forEach(btn => {
+        btn.classList.remove('active');
+    });
 }
 
 function setupOpenCloseButtons(fingerMap, fingerStates) {
@@ -700,19 +814,6 @@ export function buildFingerHierarchy(model, options = {}) {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
-
-        // camera.position.set(5, 3, 5);
-        // camera.lookAt(0, 1, 0);
-
-        // // Add OrbitControls for mouse camera movement
-        // const controls = new OrbitControls(camera, renderer.domElement);
-        // controls.enableDamping = true; // Smooth camera movement
-        // controls.dampingFactor = 0.05;
-        // controls.screenSpacePanning = false;
-        // controls.minDistance = 3; // Minimum zoom distance
-        // controls.maxDistance = 15; // Maximum zoom distance
-        // controls.maxPolarAngle = Math.PI / 2; // Prevent camera going below ground
-        // controls.target.set(0, 1, 0); // Look at arm center
 
         camera.position.set(2, 1, 5);  // Increase y from 3 to 4
         camera.lookAt(0, 2, 0);        // Increase y from 1 to 2
@@ -1580,7 +1681,18 @@ export function buildFingerHierarchy(model, options = {}) {
         }
 
         const sliders = document.querySelectorAll('.slider-wrapper');
-        const activeSliders = [];
+        activeSliders.length = 0;  // Clear existing array
+
+        for (let i = 0; i < sliders.length; i++) {
+            const label = sliders[i].querySelector('.slider-label');
+            const slider = sliders[i].querySelector('.slider');
+
+            if (label && label.textContent.trim() !== 'N/A' && slider && !slider.disabled) {
+                activeSliders.push(slider);
+            }
+        }
+
+        console.log(`Found ${activeSliders.length} active sliders for movement control`);
 
         for (let i = 0; i < sliders.length; i++) {
             const label = sliders[i].querySelector('.slider-label');
@@ -2074,6 +2186,250 @@ export function buildFingerHierarchy(model, options = {}) {
         }
 
         // ============================================
+        // GLOBAL MOVEMENT LOCK SYSTEM
+        // ============================================
+        // Prevents multiple movement sequences from interfering with each other
+        let movementLock = false;
+        let currentMovementType = null; // 'arm', 'grabWater', 'hello', etc.
+
+        // ============================================
+        // SLIDER CONTROL UTILITY FUNCTIONS
+        // ============================================
+
+        // Track if any movement is active
+        let isMovementActive = false;
+
+        // Function to start any movement sequence
+        function startMovementSequence(movementType = 'arm') {
+            // Check if another movement is already active
+            if (movementLock) {
+                console.warn(`⚠ Cannot start ${movementType} movement - ${currentMovementType || 'another'} movement is already active`);
+                return false;
+            }
+
+            movementLock = true;
+            currentMovementType = movementType;
+            isMovementActive = true;
+
+            disableAllSliders();
+            disableFingerButtons();
+
+            // Add visual indicator
+            const statusElement = document.getElementById('mqttStatus');
+            if (statusElement) {
+                statusElement.textContent = `🟡 ${movementType.charAt(0).toUpperCase() + movementType.slice(1)} Movement Active`;
+                statusElement.style.color = '#ff9900';
+            }
+
+            return true;
+        }
+
+        // Function to end any movement sequence
+        function endMovementSequence() {
+            movementLock = false;
+            currentMovementType = null;
+            isMovementActive = false;
+
+            enableAllSliders();
+            enableFingerButtons();
+
+            // Restore MQTT status
+            if (mqttClient && mqttClient.connected) {
+                const statusElement = document.getElementById('mqttStatus');
+                if (statusElement) {
+                    statusElement.textContent = '🟢 Connected to MQTT';
+                    statusElement.style.color = '#00ff00';
+                }
+            }
+
+            // Remove active class from all movement buttons
+            const movementBtns = document.querySelectorAll('.movement-btn');
+            movementBtns.forEach(btn => {
+                btn.classList.remove('active');
+            });
+        }
+        // ============================================
+        // ARM MOVEMENT BUTTON FUNCTIONALITY
+        // ============================================
+
+        const armMovementBtn = document.getElementById('armMovementBtn');
+        if (armMovementBtn) {
+            armMovementBtn.addEventListener('click', function () {
+                console.log('💪 Starting Arm Movement sequence');
+
+                // Check if movement can start
+                if (!startMovementSequence('arm')) {
+                    return;
+                }
+
+                // Visual feedback
+                armMovementBtn.classList.add('active');
+
+                // Disable button during animation
+                armMovementBtn.disabled = true;
+                armMovementBtn.textContent = 'Moving...';
+
+                // Execute the arm movement sequence
+                executeArmMovementSequence(0); // Start with first iteration
+            });
+        }
+
+        function executeArmMovementSequence(iteration) {
+            // Make sure we still have the lock
+            if (currentMovementType !== 'arm') {
+                console.warn('Arm movement interrupted');
+                return;
+            }
+            console.log(`Arm Movement iteration ${iteration + 1}/5`);
+
+            // Define the movement sequence
+            const sequence = [
+                // Step 1: Elbow to 101.7° (1.7750 rad)
+                { joint: 'Elbow', value: 101.7, index: 0, rotateFunc: rotateElbow },
+
+                // Step 2: Shoulder to -77.0° (-1.3439 rad)
+                { joint: 'Shoulder', value: -77.0, index: 2, rotateFunc: rotateShoulder },
+
+                // Step 3: Shoulder Blade to 80° (1.390 rad)
+                { joint: 'ShoulderBlade', value: 80, index: 3, rotateFunc: rotateShoulderBlade },
+
+                // Step 4: Biceps to 38.7° (0.6754 rad)
+                { joint: 'Biceps', value: 38.7, index: 1, rotateFunc: rotateBiceps },
+
+                // Step 5: Elbow to 60° (1.0507 rad)
+                { joint: 'Elbow', value: 60, index: 0, rotateFunc: rotateElbow },
+
+                // Step 6: Shoulder to -39.3° (0.6859 rad)
+                { joint: 'Shoulder', value: -39.3, index: 2, rotateFunc: rotateShoulder },
+
+                // Step 7: Shoulder Blade to 0° (0.0 rad)
+                { joint: 'ShoulderBlade', value: 0, index: 3, rotateFunc: rotateShoulderBlade },
+
+                // Step 8: Biceps to 0° (0.0 rad)
+                { joint: 'Biceps', value: 0, index: 1, rotateFunc: rotateBiceps }
+            ];
+
+            // Execute sequence step by step
+            executeArmSequenceStep(sequence, 0, iteration);
+        }
+
+        function executeArmSequenceStep(sequence, stepIndex, iteration) {
+            if (stepIndex >= sequence.length) {
+                // This iteration is complete
+                if (iteration < 4) {
+                    // Loop 4 more times (total 5)
+                    setTimeout(() => {
+                        executeArmMovementSequence(iteration + 1);
+                    }, 500); // Small delay between iterations
+                } else {
+                    // All iterations complete, reset arm
+                    console.log('✅ Arm Movement iterations complete, resetting arm...');
+                    resetArmAfterMovement();
+                }
+                return;
+            }
+
+            const movement = sequence[stepIndex];
+            console.log(`  Step ${stepIndex + 1}: Moving ${movement.joint} to ${movement.value}°`);
+
+            // Set target value
+            sliderAnimations[movement.index].targetValue = movement.value;
+
+            // Update slider visual position
+            if (activeSliders[movement.index]) {
+                if (movement.joint === 'Shoulder') {
+                    activeSliders[movement.index].value = -movement.value; // Invert for shoulder display
+                } else {
+                    activeSliders[movement.index].value = movement.value;
+                }
+            }
+
+            // Start animation
+            if (!sliderAnimations[movement.index].isAnimating) {
+                sliderAnimations[movement.index].isAnimating = true;
+                sliderAnimations[movement.index].lastTime = Date.now();
+
+                const displayElement = activeSliders[movement.index]?.parentElement?.querySelector('.slider-value-display');
+
+                // Map joint name for MQTT publication
+                const mqttJointMap = {
+                    'Elbow': 'Brryli',
+                    'Biceps': 'Biceps',
+                    'Shoulder': 'Krahu',
+                    'ShoulderBlade': 'Mbajtesi'
+                };
+
+                const mqttLabel = mqttJointMap[movement.joint] || movement.joint;
+
+                animateSliderToTarget(
+                    movement.index,
+                    activeSliders[movement.index],
+                    displayElement,
+                    movement.rotateFunc,
+                    mqttLabel
+                );
+            }
+
+            // Wait for movement to complete
+            const checkComplete = () => {
+                const anim = sliderAnimations[movement.index];
+                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
+                    // Move to next step after delay
+                    setTimeout(() => {
+                        executeArmSequenceStep(sequence, stepIndex + 1, iteration);
+                    }, 300); // Delay between steps
+                } else {
+                    setTimeout(checkComplete, 100);
+                }
+            };
+
+            setTimeout(checkComplete, 100);
+        }
+
+        function resetArmAfterMovement() {
+            console.log('Resetting arm to 0° position...');
+
+            // Reset all sliders to 0° using existing reset system
+            activeSliders.forEach((slider, index) => {
+                sliderAnimations[index].targetValue = 0;
+
+                if (!sliderAnimations[index].isAnimating) {
+                    const displayElement = slider.parentElement.querySelector('.slider-value-display');
+                    sliderAnimations[index].isAnimating = true;
+                    sliderAnimations[index].lastTime = Date.now();
+
+                    const rotateFunction = [rotateElbow, rotateBiceps, rotateShoulder, rotateShoulderBlade][index];
+                    const label = ['Elbow', 'Biceps', 'Shoulder', 'Shoulder Blade'][index];
+
+                    animateSliderToTarget(index, slider, displayElement, rotateFunction, label);
+                }
+            });
+
+            // Wait for reset to complete
+            const checkResetComplete = () => {
+                const allComplete = sliderAnimations.every(anim =>
+                    Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating
+                );
+
+                if (allComplete) {
+                    console.log('✅ Arm Movement sequence complete!');
+
+                    // Re-enable controls
+                    endMovementSequence();
+
+                    if (armMovementBtn) {
+                        armMovementBtn.disabled = false;
+                        armMovementBtn.textContent = 'Arm Movement';
+                    }
+                } else {
+                    setTimeout(checkResetComplete, 500);
+                }
+            };
+
+            setTimeout(checkResetComplete, 500);
+        }
+
+        // ============================================
         // GRAB WATER BUTTON FUNCTIONALITY
         // ============================================
 
@@ -2081,6 +2437,11 @@ export function buildFingerHierarchy(model, options = {}) {
         if (grabWaterBtn) {
             grabWaterBtn.addEventListener('click', function () {
                 console.log('💧 Starting Grab Water sequence');
+
+                // Check if movement can start
+                if (!startMovementSequence('grabWater')) {
+                    return;
+                }
 
                 // Disable button during animation
                 grabWaterBtn.disabled = true;
@@ -2132,6 +2493,7 @@ export function buildFingerHierarchy(model, options = {}) {
                                                                             moveJoint('Biceps', 0, 1, rotateBiceps, function () {
                                                                                 // Sequence complete
                                                                                 console.log('✅ Grab Water sequence complete');
+                                                                                endMovementSequence();
                                                                                 if (grabWaterBtn) {
                                                                                     grabWaterBtn.disabled = false;
                                                                                     grabWaterBtn.textContent = 'Grab Water';
@@ -2155,7 +2517,6 @@ export function buildFingerHierarchy(model, options = {}) {
             });
         }
 
-        // Helper function to move a joint
         // Helper function to move a joint
         function moveJoint(jointName, targetValue, sliderIndex, rotateFunction, callback) {
             console.log(`  Moving ${jointName} to ${targetValue}°`);
@@ -2277,13 +2638,18 @@ export function buildFingerHierarchy(model, options = {}) {
         }
 
         // ============================================
-        // HELLO MOVEMENT BUTTON FUNCTIONALITY - SIMPLIFIED
+        // HELLO MOVEMENT BUTTON FUNCTIONALITY
         // ============================================
 
         const helloMovementBtn = document.getElementById('helloMovementBtn');
         if (helloMovementBtn) {
             helloMovementBtn.addEventListener('click', function () {
                 console.log('👋 Starting Hello Movement sequence');
+
+                // Check if movement can start
+                if (!startMovementSequence('hello')) {
+                    return;
+                }
 
                 // Disable button during animation
                 helloMovementBtn.disabled = true;
@@ -2295,6 +2661,10 @@ export function buildFingerHierarchy(model, options = {}) {
         }
 
         function executeHelloSequence() {
+            if (currentMovementType !== 'hello') {
+                console.warn('Hello movement interrupted');
+                return;
+            }
             // STEP 1: Move to initial Hello position
             console.log('1. Moving to initial Hello position');
 
@@ -2482,7 +2852,11 @@ export function buildFingerHierarchy(model, options = {}) {
                 );
 
                 if (allComplete) {
-                    // console.log('✅ Hello Movement sequence complete');
+                    console.log('✅ Hello Movement sequence complete');
+
+                    // Release movement lock and re-enable controls
+                    endMovementSequence();
+
                     if (helloMovementBtn) {
                         helloMovementBtn.disabled = false;
                         helloMovementBtn.textContent = 'Hello Movement';
