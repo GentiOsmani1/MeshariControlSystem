@@ -2104,7 +2104,7 @@ export function buildFingerHierarchy(model, options = {}) {
             isAnimating: false
         }));
 
-        const MOVEMENT_SPEED = 40; // degrees per second (matches reset animation speed)
+        const MOVEMENT_SPEED = 50; // degrees per second (matches reset animation speed)
 
         function animateSliderToTarget(sliderIndex, slider, displayElement, rotateFunction, label) {
             const animation = sliderAnimations[sliderIndex];
