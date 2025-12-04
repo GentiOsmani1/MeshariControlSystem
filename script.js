@@ -49,7 +49,6 @@ function connectMQTT() {
         mqttClient.on('error', (err) => {
             console.error('❌ MQTT Connection Error:', err.message || err);
             updateConnectionStatus(false);
-            // Don't let MQTT errors stop the script - arm should still load
         });
 
     } catch (error) {
@@ -84,7 +83,7 @@ setTimeout(() => {
 // Function to publish joint values to MQTT broker (unified for both sliders and buttons)
 function publishJointValue(jointName, value, isRadians = true) {
     if (!mqttClient || !mqttClient.connected) {
-        console.log('⚠️ Not connected to MQTT broker');
+        console.log(' Not connected to MQTT broker');
         return;
     }
 
@@ -108,7 +107,7 @@ function publishJointValue(jointName, value, isRadians = true) {
         { qos: 0 }                      // Quality of Service
     );
 
-    console.log('📤 Published to MQTT:', message);
+    // console.log('Published to MQTT:', message);
 }
 
 function publishSliderValue(sliderName, value) {
@@ -142,6 +141,7 @@ function setupFingerButtons() {
     // Track finger states for toggle functionality
     const fingerStates = new Map();
 
+    // Initialize all finger states to 0 (open) by default
     fingerButtons.forEach(button => {
         const fingerName = button.textContent;
         const jointName = fingerMap[fingerName];
@@ -152,6 +152,18 @@ function setupFingerButtons() {
 
         // Initialize state to 0 (open) by default
         fingerStates.set(jointName, 0);
+    });
+
+    // Initialize all displays to 0° (once after all states are set)
+    updateAllFingerDisplays(fingerStates);
+
+    fingerButtons.forEach(button => {
+        const fingerName = button.textContent;
+        const jointName = fingerMap[fingerName];
+
+        if (!jointName) {
+            return;
+        }
 
         button.addEventListener('click', function () {
             // Toggle between 180 and 0 degrees
@@ -163,15 +175,24 @@ function setupFingerButtons() {
                 // Update state
                 fingerStates.set(jointName, newValue);
 
+                // UPDATE FINGER DISPLAY
+                // Get the finger key from the button text
+                const fingerKey = Object.keys(fingerMap).find(key => fingerMap[key] === jointName);
+                if (fingerKey) {
+                    // Remove "Move " prefix and convert to lowercase for display function
+                    const displayKey = fingerKey.toLowerCase().replace('move ', '').trim();
+                    updateFingerValueDisplay(displayKey, newValue);
+                }
+
                 // Send the value (isRadians = false because we're sending degrees)
                 publishJointValue(jointName, newValue, false);
 
                 // Apply visual curl for corresponding finger
-                const fingerKey = Object.keys(fingerMap).find(key => fingerMap[key] === jointName)?.toLowerCase();
-                if (fingerKey && fingerSegmentsMap.has(fingerKey)) {
+                const fingerKeyForCurl = Object.keys(fingerMap).find(key => fingerMap[key] === jointName)?.toLowerCase();
+                if (fingerKeyForCurl && fingerSegmentsMap.has(fingerKeyForCurl)) {
                     // Convert to boolean: 180 = curled (true), 0 = open (false)
                     const shouldCurl = newValue === 180;
-                    applyFingerCurl(fingerKey, shouldCurl, {
+                    applyFingerCurl(fingerKeyForCurl, shouldCurl, {
                         axis: 'x',
                         angles: [-90, -90, -90]
                     });
@@ -180,7 +201,7 @@ function setupFingerButtons() {
                 // Visual feedback
                 this.classList.toggle('active', newValue === 180);
 
-                console.log('👆 Finger button pressed:', jointName, newValue + '°');
+                // console.log(' Finger button pressed:', jointName, newValue + '°');
             }
         });
     });
@@ -195,9 +216,75 @@ function setupFingerButtons() {
         }
     });
 
-
     // NEW: Add Open/Close All buttons functionality
     setupOpenCloseButtons(fingerMap, fingerStates);
+}
+
+// ============================================
+// FINGER VALUE DISPLAY FUNCTIONS
+// ============================================
+
+function updateFingerValueDisplay(fingerKey, value) {
+    // Clean up the finger key (remove "move " prefix and trim)
+    const cleanKey = fingerKey.toLowerCase().replace('move ', '').trim();
+
+    // Map cleaned finger keys to button indices
+    const fingerToIndexMap = {
+        'index': 0,     // Move Index
+        'middle': 1,    // Move Middle
+        'ring': 2,      // Move Ring
+        'pinky': 3,     // Move Pinky
+        'thumb': 4,     // Move Thumb
+        'thumb sideways': 5, // Move Thumb Sideways
+        'thumbsideways': 5,  // Alternative
+        'thumb1': 5     // MQTT name
+    };
+
+    const index = fingerToIndexMap[cleanKey];
+    if (index === undefined) {
+        console.warn(`Unknown finger key: ${fingerKey} (cleaned to: ${cleanKey})`);
+        return;
+    }
+
+    // Get all individual finger wrappers
+    const fingerWrappers = document.querySelectorAll('.individual-finger-wrapper');
+    if (fingerWrappers[index]) {
+        const degreeDisplay = fingerWrappers[index].querySelector('.degree-display');
+        const radianDisplay = fingerWrappers[index].querySelector('.radian-display');
+
+        if (degreeDisplay) {
+            degreeDisplay.textContent = `${value}°`;
+        }
+        if (radianDisplay) {
+            const radianValue = value * (Math.PI / 180);
+            radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+        }
+    } else {
+        console.warn(`Finger wrapper not found for index: ${index} (key: ${cleanKey})`);
+    }
+}
+
+// Function to update all finger displays based on current states
+function updateAllFingerDisplays(fingerStates) {
+    if (!fingerStates) return;
+
+    // Map MQTT joint names to finger keys
+    const jointToFingerMap = {
+        'Index': 'index',
+        'Middle': 'middle',
+        'Ring': 'ring',
+        'Pinky': 'pinky',
+        'Thumb': 'thumb',
+        'Thumb1': 'thumb1'
+    };
+
+    // Update each finger display
+    fingerStates.forEach((value, jointName) => {
+        const fingerKey = jointToFingerMap[jointName];
+        if (fingerKey) {
+            updateFingerValueDisplay(fingerKey, value);
+        }
+    });
 }
 
 
@@ -351,7 +438,7 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
             return;
         }
 
-        console.log('👐 Opening all fingers (0°)');
+        // console.log('👐 Opening all fingers (0°)');
 
         fingerJointNames.forEach(jointName => {
             // Update state to 0 (open)
@@ -360,8 +447,11 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
             // Send MQTT value (isRadians = false because we're sending degrees)
             publishJointValue(jointName, 0, false);
 
-            console.log(`  Sent ${jointName}: 0°`);
+            // console.log(`  Sent ${jointName}: 0°`);
         });
+
+        // UPDATE ALL FINGER DISPLAYS TO 0°
+        updateAllFingerDisplays(fingerStates);
 
         // Update individual finger button visual states
         updateIndividualButtonStates(fingerStates, fingerMap);
@@ -383,7 +473,7 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
             return;
         }
 
-        console.log('🤏 Closing all fingers (180°)');
+        // console.log('🤏 Closing all fingers (180°)');
 
         fingerJointNames.forEach(jointName => {
             // Update state to 180 (closed)
@@ -392,8 +482,11 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
             // Send MQTT value (isRadians = false because we're sending degrees)
             publishJointValue(jointName, 180, false);
 
-            console.log(`  Sent ${jointName}: 180°`);
+            // console.log(`  Sent ${jointName}: 180°`);
         });
+
+        // UPDATE ALL FINGER DISPLAYS TO 180°
+        updateAllFingerDisplays(fingerStates);
 
         // Update individual finger button visual states
         updateIndividualButtonStates(fingerStates, fingerMap);
@@ -432,9 +525,19 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
     };
 
 }
-// HELPER FUNCTION: Update individual finger button visual states
+// HELPER FUNCTION: Update individual finger button visual states and displays
 function updateIndividualButtonStates(fingerStates, fingerMap) {
     const fingerButtons = document.querySelectorAll('.individual-finger-btn');
+
+    // Map MQTT joint names to finger keys
+    const jointToFingerMap = {
+        'Index': 'index',
+        'Middle': 'middle',
+        'Ring': 'ring',
+        'Pinky': 'pinky',
+        'Thumb': 'thumb',
+        'Thumb1': 'thumb1'
+    };
 
     fingerButtons.forEach(button => {
         const fingerName = button.textContent;
@@ -443,6 +546,12 @@ function updateIndividualButtonStates(fingerStates, fingerMap) {
         if (jointName && fingerStates.has(jointName)) {
             const state = fingerStates.get(jointName);
             button.classList.toggle('active', state === 180);
+
+            // Also update the display for this finger
+            const fingerKey = jointToFingerMap[jointName];
+            if (fingerKey) {
+                updateFingerValueDisplay(fingerKey, state);
+            }
         }
     });
 }
@@ -2201,34 +2310,34 @@ export function buildFingerHierarchy(model, options = {}) {
         // CLEAR CONSOLE FUNCTIONALITY
         // ============================================
 
-        function setupClearConsoleButton() {
-            const clearConsoleBtn = document.getElementById('clearConsoleBtn');
-            if (!clearConsoleBtn) {
-                console.warn('Clear Console button not found in HTML');
-                return;
-            }
+        // function setupClearConsoleButton() {
+        //     const clearConsoleBtn = document.getElementById('clearConsoleBtn');
+        //     if (!clearConsoleBtn) {
+        //         console.warn('Clear Console button not found in HTML');
+        //         return;
+        //     }
 
-            clearConsoleBtn.addEventListener('click', function () {
-                console.clear();
-                console.log('✅ Console cleared at ' + new Date().toLocaleTimeString());
+        //     clearConsoleBtn.addEventListener('click', function () {
+        //         console.clear();
+        //         console.log('✅ Console cleared at ' + new Date().toLocaleTimeString());
 
-                // Optional: Visual feedback
-                const originalText = clearConsoleBtn.textContent;
-                // clearConsoleBtn.textContent = '✓ Cleared!';
-                // clearConsoleBtn.style.backgroundColor = '#28a745';
+        //         // Optional: Visual feedback
+        //         const originalText = clearConsoleBtn.textContent;
+        //         // clearConsoleBtn.textContent = '✓ Cleared!';
+        //         // clearConsoleBtn.style.backgroundColor = '#28a745';
 
-                // Reset button after 1 second
-                setTimeout(() => {
-                    clearConsoleBtn.textContent = originalText;
-                    clearConsoleBtn.style.backgroundColor = '';
-                }, 1000);
-            });
-        }
+        //         // Reset button after 1 second
+        //         setTimeout(() => {
+        //             clearConsoleBtn.textContent = originalText;
+        //             clearConsoleBtn.style.backgroundColor = '';
+        //         }, 1000);
+        //     });
+        // }
 
         // Call this function when the DOM is ready
         document.addEventListener('DOMContentLoaded', function () {
             setTimeout(() => {
-                setupClearConsoleButton();
+                // setupClearConsoleButton();
             }, 500);
         });
 

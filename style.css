@@ -364,3 +364,41 @@ body {
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
     line-height: 1;
 }
+
+/* Individual finger value display */
+.individual-finger-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.individual-finger-value-displays {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+}
+
+.individual-finger-value-display {
+    background: #26384e;
+    color: #5a9fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #3a3a4a;
+    min-width: 50px;
+    text-align: center;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Update the individual-fingers-grid to accommodate the wrapper */
+.individual-fingers-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(6, 1fr);
+    gap: 25px;
+    /* Increased gap to accommodate value displays */
+    flex: 1;
+}

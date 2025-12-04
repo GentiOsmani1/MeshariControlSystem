@@ -14,7 +14,6 @@
     }
     </script>
     <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
-    <!-- <script type="module" src="js/main.js"></script> -->
     <script type="module" src="script.js"></script>
 </head>
 
@@ -43,7 +42,7 @@
                     Sliders
                     <div>
                         <button class="reset-sliders-btn" id="resetSlidersBtn">Reset</button>
-                        <button id="clearConsoleBtn" class="reset-sliders-btn">Clear Console</button>
+                        <!-- <button id="clearConsoleBtn" class="reset-sliders-btn">Clear Console</button> -->
                     </div>
                 </div>
                 <!-- Update each slider wrapper section to include both displays -->
@@ -124,15 +123,46 @@
             </div>
 
             <!-- Bottom section matching IsaacSim window height -->
+            <!-- Update the individual-fingers-grid section -->
             <div class="section individual-fingers-section">
                 <div class="section-title">Individual Finger Control</div>
                 <div class="individual-fingers-grid">
-                    <button class="individual-finger-btn">Move Index</button>
-                    <button class="individual-finger-btn">Move Middle</button>
-                    <button class="individual-finger-btn">Move Ring</button>
-                    <button class="individual-finger-btn">Move Pinky</button>
-                    <button class="individual-finger-btn">Move Thumb</button>
-                    <button class="individual-finger-btn">Move Thumb Sideways</button>
+                    <div class="individual-finger-wrapper">
+                        <div class="individual-finger-value-displays">
+                            <span class="individual-finger-value-display degree-display">0.0°</span>
+                        </div>
+                        <button class="individual-finger-btn">Move Index</button>
+                    </div>
+                    <div class="individual-finger-wrapper">
+                        <div class="individual-finger-value-displays">
+                            <span class="individual-finger-value-display degree-display">0.0°</span>
+                        </div>
+                        <button class="individual-finger-btn">Move Middle</button>
+                    </div>
+                    <div class="individual-finger-wrapper">
+                        <div class="individual-finger-value-displays">
+                            <span class="individual-finger-value-display degree-display">0.0°</span>
+                        </div>
+                        <button class="individual-finger-btn">Move Ring</button>
+                    </div>
+                    <div class="individual-finger-wrapper">
+                        <div class="individual-finger-value-displays">
+                            <span class="individual-finger-value-display degree-display">0.0°</span>
+                        </div>
+                        <button class="individual-finger-btn">Move Pinky</button>
+                    </div>
+                    <div class="individual-finger-wrapper">
+                        <div class="individual-finger-value-displays">
+                            <span class="individual-finger-value-display degree-display">0.0°</span>
+                        </div>
+                        <button class="individual-finger-btn">Move Thumb</button>
+                    </div>
+                    <div class="individual-finger-wrapper">
+                        <div class="individual-finger-value-displays">
+                            <span class="individual-finger-value-display degree-display">0.0°</span>
+                        </div>
+                        <button class="individual-finger-btn">Move Thumb Sideways</button>
+                    </div>
                 </div>
             </div>
         </div>
