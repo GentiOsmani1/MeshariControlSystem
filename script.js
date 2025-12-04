@@ -4,23 +4,6 @@ import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examp
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/controls/OrbitControls.js';
 
 // ============================================
-// CONSOLE WARNING SUPPRESSION
-// ============================================
-// Suppress meshopt_decoder warnings permanently
-const originalWarn = console.warn;
-console.warn = function (...args) {
-    // Check if this is the meshopt_decoder warning
-    if (args.length > 0 && typeof args[0] === 'string' &&
-        args[0].includes('meshopt_decoder') &&
-        args[0].includes('experimental SIMD')) {
-        // Suppress this specific warning
-        return;
-    }
-    // Pass through all other warnings
-    originalWarn.apply(console, args);
-};
-
-// ============================================
 // GLOBAL FINGER MESHES OBJECT
 // ============================================
 let fingerMeshes = {
@@ -79,15 +62,10 @@ function connectMQTT() {
 // Update connection status indicator
 function updateConnectionStatus(connected) {
     const statusElement = document.getElementById('mqttStatus');
-    if (statusElement) {
-        if (connected) {
-            statusElement.textContent = '🟢 Connected to MQTT';
-            statusElement.style.color = '#00ff00';
-        } else {
-            statusElement.textContent = '🔴 Disconnected';
-            statusElement.style.color = '#ff0000';
-        }
-    }
+    if (!statusElement) return;
+
+    statusElement.textContent = connected ? '🟢 Connected to MQTT' : '🔴 Disconnected';
+    statusElement.style.color = connected ? '#00ff00' : '#ff0000';
 }
 
 // Call this when page loads - use setTimeout to make it non-blocking
@@ -153,12 +131,12 @@ function setupFingerButtons() {
 
     // Finger mapping to MQTT joint names
     const fingerMap = {
-        'Move Index': 'IndexFinger',
-        'Move Middle': 'MiddleFinger',
-        'Move Ring': 'RingFinger',
-        'Move Pinky': 'PinkyFinger',
-        // 'Move Thumb': 'ThumbUpDown',
-        // 'Move Thumb Sideways': 'ThumbSideways'
+        'Move Index': 'Index',
+        'Move Middle': 'Middle',
+        'Move Ring': 'Ring',
+        'Move Pinky': 'Pinky',
+        'Move Thumb': 'Thumb',
+        'Move Thumb Sideways': 'Thumb1'
     };
 
     // Track finger states for toggle functionality
