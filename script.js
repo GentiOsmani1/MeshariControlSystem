@@ -1692,7 +1692,7 @@ export function buildFingerHierarchy(model, options = {}) {
             }
         }
 
-        console.log(`Found ${activeSliders.length} active sliders for movement control`);
+        // console.log(`Found ${activeSliders.length} active sliders for movement control`);
 
         for (let i = 0; i < sliders.length; i++) {
             const label = sliders[i].querySelector('.slider-label');
