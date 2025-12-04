@@ -37,7 +37,7 @@ let fingerMeshes = {
 
 // Replace these with YOUR HiveMQ Cloud credentials
 const MQTT_CONFIG = {
-    host: 'wss://broker.hivemq.com:8884/mqtt',
+    // host: 'wss://broker.hivemq.com:8884/mqtt',
     options: {
         clientId: 'meshari_' + Math.random().toString(16).substr(2, 8),
         clean: true,
@@ -2078,6 +2078,11 @@ export function buildFingerHierarchy(model, options = {}) {
             if (displayElement) {
                 displayElement.textContent = `${animation.currentValue.toFixed(1)}°`;
             }
+            const radianDisplay = slider.parentElement.querySelector('.radian-display');
+            if (radianDisplay) {
+                const radianValue = animation.currentValue * (Math.PI / 180);
+                radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+            }
 
             // Apply rotation
             if (ensureArmSystemInitialized()) {
@@ -2114,6 +2119,12 @@ export function buildFingerHierarchy(model, options = {}) {
         // Moves: Forearm_1, Palm_1, and all finger joints
         activeSliders[0].addEventListener('input', function () {
             const displayElement = this.parentElement.querySelector('.slider-value-display');
+            // Convert to radians and update radian display
+            const radianValue = parseFloat(this.value) * (Math.PI / 180);
+            const radianDisplay = this.parentElement.querySelector('.radian-display');
+            if (radianDisplay) {
+                radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+            }
             startSliderAnimation(0, this, displayElement, rotateElbow, 'Elbow');
             // Publish to MQTT - will be converted to "2" in publishSliderValue
             publishSliderValue('Elbow', parseFloat(this.value));
@@ -2124,6 +2135,12 @@ export function buildFingerHierarchy(model, options = {}) {
         if (activeSliders[1]) {
             activeSliders[1].addEventListener('input', function () {
                 const displayElement = this.parentElement.querySelector('.slider-value-display');
+                // Convert to radians and update radian display
+                const radianValue = parseFloat(this.value) * (Math.PI / 180);
+                const radianDisplay = this.parentElement.querySelector('.radian-display');
+                if (radianDisplay) {
+                    radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+                }
                 startSliderAnimation(1, this, displayElement, rotateBiceps, 'Biceps');
                 // Publish to MQTT - will be converted to "5" in publishSliderValue
                 publishSliderValue('Biceps', parseFloat(this.value));
@@ -2142,6 +2159,12 @@ export function buildFingerHierarchy(model, options = {}) {
                 if (displayElement) {
                     displayElement.textContent = invertedSlider.value.toFixed(1) + '°';
                 }
+                // Convert to radians and update radian display
+                const radianValue = invertedSlider.value * (Math.PI / 180);
+                const radianDisplay = this.parentElement.querySelector('.radian-display');
+                if (radianDisplay) {
+                    radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+                }
                 sliderAnimations[2].targetValue = invertedSlider.value;
                 if (!sliderAnimations[2].isAnimating) {
                     sliderAnimations[2].isAnimating = true;
@@ -2158,6 +2181,12 @@ export function buildFingerHierarchy(model, options = {}) {
         if (activeSliders[3]) {
             activeSliders[3].addEventListener('input', function () {
                 const displayElement = this.parentElement.querySelector('.slider-value-display');
+                // Convert to radians and update radian display
+                const radianValue = parseFloat(this.value) * (Math.PI / 180);
+                const radianDisplay = this.parentElement.querySelector('.radian-display');
+                if (radianDisplay) {
+                    radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+                }
                 startSliderAnimation(3, this, displayElement, rotateShoulderBlade, 'Shoulder Blade');
                 // Publish to MQTT - will be converted to "4" in publishSliderValue
                 publishSliderValue('ShoulderBlade', parseFloat(this.value));
@@ -2170,7 +2199,12 @@ export function buildFingerHierarchy(model, options = {}) {
             resetBtn.addEventListener('click', function () {
                 activeSliders.forEach((slider, index) => {
                     sliderAnimations[index].targetValue = 0;
-
+                    // Update radian display for reset
+                    const radianValue = 0 * (Math.PI / 180);
+                    const radianDisplay = slider.parentElement.querySelector('.radian-display');
+                    if (radianDisplay) {
+                        radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+                    }
                     if (!sliderAnimations[index].isAnimating) {
                         const displayElement = slider.parentElement.querySelector('.slider-value-display');
                         sliderAnimations[index].isAnimating = true;
@@ -2184,6 +2218,41 @@ export function buildFingerHierarchy(model, options = {}) {
                 });
             });
         }
+
+        // ============================================
+        // CLEAR CONSOLE FUNCTIONALITY
+        // ============================================
+
+        function setupClearConsoleButton() {
+            const clearConsoleBtn = document.getElementById('clearConsoleBtn');
+            if (!clearConsoleBtn) {
+                console.warn('Clear Console button not found in HTML');
+                return;
+            }
+
+            clearConsoleBtn.addEventListener('click', function () {
+                console.clear();
+                console.log('✅ Console cleared at ' + new Date().toLocaleTimeString());
+
+                // Optional: Visual feedback
+                const originalText = clearConsoleBtn.textContent;
+                // clearConsoleBtn.textContent = '✓ Cleared!';
+                // clearConsoleBtn.style.backgroundColor = '#28a745';
+
+                // Reset button after 1 second
+                setTimeout(() => {
+                    clearConsoleBtn.textContent = originalText;
+                    clearConsoleBtn.style.backgroundColor = '';
+                }, 1000);
+            });
+        }
+
+        // Call this function when the DOM is ready
+        document.addEventListener('DOMContentLoaded', function () {
+            setTimeout(() => {
+                setupClearConsoleButton();
+            }, 500);
+        });
 
         // ============================================
         // GLOBAL MOVEMENT LOCK SYSTEM
@@ -2905,4 +2974,20 @@ export function buildFingerHierarchy(model, options = {}) {
     }
 
     initThreeJS();
+    // Initialize radian displays on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(() => {
+            const sliders = document.querySelectorAll('.slider');
+            sliders.forEach((slider) => {
+                if (!slider.disabled) {
+                    const degreeValue = parseFloat(slider.value);
+                    const radianValue = degreeValue * (Math.PI / 180);
+                    const radianDisplay = slider.parentElement.querySelector('.radian-display');
+                    if (radianDisplay) {
+                        radianDisplay.textContent = `${radianValue.toFixed(2)} rad`;
+                    }
+                }
+            });
+        }, 1000);
+    });
 })();

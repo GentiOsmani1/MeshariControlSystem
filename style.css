@@ -55,6 +55,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: nowrap;
+    /* Add this to prevent wrapping */
 }
 
 .reset-sliders-btn {
@@ -69,6 +71,10 @@ body {
     transition: all 0.2s ease;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap;
+    /* Add this to prevent text wrapping */
+    margin-left: 8px;
+    /* Add spacing between buttons */
 }
 
 .reset-sliders-btn:hover {
@@ -113,9 +119,6 @@ body {
 }
 
 .slider-value-display {
-    position: absolute;
-    right: 0;
-    top: 0;
     background: #26384e;
     color: #5a9fff;
     font-size: 11px;
@@ -127,6 +130,15 @@ body {
     text-align: center;
     pointer-events: none;
     user-select: none;
+}
+
+.value-displays {
+    position: absolute;
+    right: 0;
+    top: -9px;
+    /* Changed from top: 0 to move it 4px higher */
+    display: flex;
+    gap: 4px;
 }
 
 .slider {
