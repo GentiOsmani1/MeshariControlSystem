@@ -168,7 +168,14 @@ function setupFingerButtons() {
         button.addEventListener('click', function () {
             // Toggle between 180 and 0 degrees
             const currentState = fingerStates.get(jointName) || 0;
-            const newValue = currentState === 180 ? 0 : 180;
+            let newValue;
+            if (jointName === 'Thumb1') {
+                // Thumb sideways: 0 for open, 60 for closed
+                newValue = currentState === 60 ? 0 : 60;
+            } else {
+                // Other fingers: 0 for open, -90 for closed
+                newValue = currentState === -90 ? 0 : -90;
+            }
 
             // Only send command if state is actually changing
             if (newValue !== currentState) {
@@ -191,7 +198,12 @@ function setupFingerButtons() {
                 const fingerKeyForCurl = Object.keys(fingerMap).find(key => fingerMap[key] === jointName)?.toLowerCase();
                 if (fingerKeyForCurl && fingerSegmentsMap.has(fingerKeyForCurl)) {
                     // Convert to boolean: 180 = curled (true), 0 = open (false)
-                    const shouldCurl = newValue === 180;
+                    let shouldCurl;
+                    if (jointName === 'Thumb1') {
+                        shouldCurl = newValue === 60;
+                    } else {
+                        shouldCurl = newValue === -90;
+                    }
                     applyFingerCurl(fingerKeyForCurl, shouldCurl, {
                         axis: 'x',
                         angles: [-90, -90, -90]
@@ -199,9 +211,11 @@ function setupFingerButtons() {
                 }
 
                 // Visual feedback
-                this.classList.toggle('active', newValue === 180);
-
-                // console.log(' Finger button pressed:', jointName, newValue + '°');
+                if (jointName === 'Thumb1') {
+                    this.classList.toggle('active', newValue === 60);
+                } else {
+                    this.classList.toggle('active', newValue === -90);
+                }
             }
         });
     });
@@ -212,7 +226,11 @@ function setupFingerButtons() {
         const jointName = fingerMap[fingerName];
         if (jointName) {
             const currentState = fingerStates.get(jointName) || 0;
-            button.classList.toggle('active', currentState === 180);
+            if (jointName === 'Thumb1') {
+                button.classList.toggle('active', currentState === 60);
+            } else {
+                button.classList.toggle('active', currentState === -90);
+            }
         }
     });
 
@@ -342,65 +360,6 @@ function enableAllSliders() {
     }
 }
 
-// Disable finger buttons during automated movement
-function disableFingerButtons() {
-    const fingerButtons = document.querySelectorAll('.finger-btn, .individual-finger-btn');
-    fingerButtons.forEach(button => {
-        button.disabled = true;
-        button.style.opacity = '0.5';
-        button.style.cursor = 'not-allowed';
-    });
-}
-
-// Enable finger buttons after automated movement
-function enableFingerButtons() {
-    const fingerButtons = document.querySelectorAll('.finger-btn, .individual-finger-btn');
-    fingerButtons.forEach(button => {
-        button.disabled = false;
-        button.style.opacity = '1';
-        button.style.cursor = 'pointer';
-    });
-}
-
-// Track if any movement is active
-let isMovementActive = false;
-
-// Function to start any movement sequence
-function startMovementSequence() {
-    isMovementActive = true;
-    disableAllSliders();
-    disableFingerButtons();
-
-    // Add visual indicator
-    const statusElement = document.getElementById('mqttStatus');
-    if (statusElement) {
-        statusElement.textContent = '🟡 Movement Active';
-        statusElement.style.color = '#ff9900';
-    }
-}
-
-// Function to end any movement sequence
-function endMovementSequence() {
-    isMovementActive = false;
-    enableAllSliders();
-    enableFingerButtons();
-
-    // Restore MQTT status
-    if (mqttClient && mqttClient.connected) {
-        const statusElement = document.getElementById('mqttStatus');
-        if (statusElement) {
-            statusElement.textContent = '🟢 Connected to MQTT';
-            statusElement.style.color = '#00ff00';
-        }
-    }
-
-    // Remove active class from all movement buttons
-    const movementBtns = document.querySelectorAll('.movement-btn');
-    movementBtns.forEach(btn => {
-        btn.classList.remove('active');
-    });
-}
-
 function setupOpenCloseButtons(fingerMap, fingerStates) {
     // Find buttons by their text content
     const allButtons = document.querySelectorAll('.finger-btn');
@@ -429,7 +388,11 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
         // Check if any fingers are actually closed (state = 180)
         const closedFingers = fingerJointNames.filter(jointName => {
             const currentState = fingerStates.get(jointName) || 0;
-            return currentState === 180;
+            if (jointName === 'Thumb1') {
+                return currentState === 60;
+            } else {
+                return currentState === -90;
+            }
         });
 
         // If no fingers are closed, do nothing
@@ -476,13 +439,14 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
         // console.log('🤏 Closing all fingers (180°)');
 
         fingerJointNames.forEach(jointName => {
-            // Update state to 180 (closed)
-            fingerStates.set(jointName, 180);
-
-            // Send MQTT value (isRadians = false because we're sending degrees)
-            publishJointValue(jointName, 180, false);
-
-            // console.log(`  Sent ${jointName}: 180°`);
+            // Update state to closed (-90 for regular fingers, 60 for Thumb1)
+            if (jointName === 'Thumb1') {
+                fingerStates.set(jointName, 60);
+                publishJointValue(jointName, 60, false);
+            } else {
+                fingerStates.set(jointName, -90);
+                publishJointValue(jointName, -90, false);
+            }
         });
 
         // UPDATE ALL FINGER DISPLAYS TO 180°
@@ -505,7 +469,11 @@ function setupOpenCloseButtons(fingerMap, fingerStates) {
 
         const allClosed = fingerJointNames.every(jointName => {
             const currentState = fingerStates.get(jointName) || 0;
-            return currentState === 180;
+            if (jointName === 'Thumb1') {
+                return currentState === 60;
+            } else {
+                return currentState === -90;
+            }
         });
 
         // Update button visual states
@@ -545,7 +513,11 @@ function updateIndividualButtonStates(fingerStates, fingerMap) {
 
         if (jointName && fingerStates.has(jointName)) {
             const state = fingerStates.get(jointName);
-            button.classList.toggle('active', state === 180);
+            if (jointName === 'Thumb1') {
+                button.classList.toggle('active', state === 60);
+            } else {
+                button.classList.toggle('active', state === -90);
+            }
 
             // Also update the display for this finger
             const fingerKey = jointToFingerMap[jointName];
@@ -2132,7 +2104,7 @@ export function buildFingerHierarchy(model, options = {}) {
             isAnimating: false
         }));
 
-        const MOVEMENT_SPEED = 20; // degrees per second (matches reset animation speed)
+        const MOVEMENT_SPEED = 40; // degrees per second (matches reset animation speed)
 
         function animateSliderToTarget(sliderIndex, slider, displayElement, rotateFunction, label) {
             const animation = sliderAnimations[sliderIndex];
@@ -2307,723 +2279,8 @@ export function buildFingerHierarchy(model, options = {}) {
         }
 
         // ============================================
-        // CLEAR CONSOLE FUNCTIONALITY
-        // ============================================
-
-        // function setupClearConsoleButton() {
-        //     const clearConsoleBtn = document.getElementById('clearConsoleBtn');
-        //     if (!clearConsoleBtn) {
-        //         console.warn('Clear Console button not found in HTML');
-        //         return;
-        //     }
-
-        //     clearConsoleBtn.addEventListener('click', function () {
-        //         console.clear();
-        //         console.log('✅ Console cleared at ' + new Date().toLocaleTimeString());
-
-        //         // Optional: Visual feedback
-        //         const originalText = clearConsoleBtn.textContent;
-        //         // clearConsoleBtn.textContent = '✓ Cleared!';
-        //         // clearConsoleBtn.style.backgroundColor = '#28a745';
-
-        //         // Reset button after 1 second
-        //         setTimeout(() => {
-        //             clearConsoleBtn.textContent = originalText;
-        //             clearConsoleBtn.style.backgroundColor = '';
-        //         }, 1000);
-        //     });
-        // }
-
-        // Call this function when the DOM is ready
-        document.addEventListener('DOMContentLoaded', function () {
-            setTimeout(() => {
-                // setupClearConsoleButton();
-            }, 500);
-        });
-
-        // ============================================
-        // GLOBAL MOVEMENT LOCK SYSTEM
-        // ============================================
-        // Prevents multiple movement sequences from interfering with each other
-        let movementLock = false;
-        let currentMovementType = null; // 'arm', 'grabWater', 'hello', etc.
-
-        // ============================================
         // SLIDER CONTROL UTILITY FUNCTIONS
         // ============================================
-
-        // Track if any movement is active
-        let isMovementActive = false;
-
-        // Function to start any movement sequence
-        function startMovementSequence(movementType = 'arm') {
-            // Check if another movement is already active
-            if (movementLock) {
-                console.warn(`⚠ Cannot start ${movementType} movement - ${currentMovementType || 'another'} movement is already active`);
-                return false;
-            }
-
-            movementLock = true;
-            currentMovementType = movementType;
-            isMovementActive = true;
-
-            disableAllSliders();
-            disableFingerButtons();
-
-            // Add visual indicator
-            const statusElement = document.getElementById('mqttStatus');
-            if (statusElement) {
-                statusElement.textContent = `🟡 ${movementType.charAt(0).toUpperCase() + movementType.slice(1)} Movement Active`;
-                statusElement.style.color = '#ff9900';
-            }
-
-            return true;
-        }
-
-        // Function to end any movement sequence
-        function endMovementSequence() {
-            movementLock = false;
-            currentMovementType = null;
-            isMovementActive = false;
-
-            enableAllSliders();
-            enableFingerButtons();
-
-            // Restore MQTT status
-            if (mqttClient && mqttClient.connected) {
-                const statusElement = document.getElementById('mqttStatus');
-                if (statusElement) {
-                    statusElement.textContent = '🟢 Connected to MQTT';
-                    statusElement.style.color = '#00ff00';
-                }
-            }
-
-            // Remove active class from all movement buttons
-            const movementBtns = document.querySelectorAll('.movement-btn');
-            movementBtns.forEach(btn => {
-                btn.classList.remove('active');
-            });
-        }
-        // ============================================
-        // ARM MOVEMENT BUTTON FUNCTIONALITY
-        // ============================================
-
-        const armMovementBtn = document.getElementById('armMovementBtn');
-        if (armMovementBtn) {
-            armMovementBtn.addEventListener('click', function () {
-                console.log('💪 Starting Arm Movement sequence');
-
-                // Check if movement can start
-                if (!startMovementSequence('arm')) {
-                    return;
-                }
-
-                // Visual feedback
-                armMovementBtn.classList.add('active');
-
-                // Disable button during animation
-                armMovementBtn.disabled = true;
-                armMovementBtn.textContent = 'Moving...';
-
-                // Execute the arm movement sequence
-                executeArmMovementSequence(0); // Start with first iteration
-            });
-        }
-
-        function executeArmMovementSequence(iteration) {
-            // Make sure we still have the lock
-            if (currentMovementType !== 'arm') {
-                console.warn('Arm movement interrupted');
-                return;
-            }
-            console.log(`Arm Movement iteration ${iteration + 1}/5`);
-
-            // Define the movement sequence
-            const sequence = [
-                // Step 1: Elbow to 101.7° (1.7750 rad)
-                { joint: 'Elbow', value: 101.7, index: 0, rotateFunc: rotateElbow },
-
-                // Step 2: Shoulder to -77.0° (-1.3439 rad)
-                { joint: 'Shoulder', value: -77.0, index: 2, rotateFunc: rotateShoulder },
-
-                // Step 3: Shoulder Blade to 80° (1.390 rad)
-                { joint: 'ShoulderBlade', value: 80, index: 3, rotateFunc: rotateShoulderBlade },
-
-                // Step 4: Biceps to 38.7° (0.6754 rad)
-                { joint: 'Biceps', value: 38.7, index: 1, rotateFunc: rotateBiceps },
-
-                // Step 5: Elbow to 60° (1.0507 rad)
-                { joint: 'Elbow', value: 60, index: 0, rotateFunc: rotateElbow },
-
-                // Step 6: Shoulder to -39.3° (0.6859 rad)
-                { joint: 'Shoulder', value: -39.3, index: 2, rotateFunc: rotateShoulder },
-
-                // Step 7: Shoulder Blade to 0° (0.0 rad)
-                { joint: 'ShoulderBlade', value: 0, index: 3, rotateFunc: rotateShoulderBlade },
-
-                // Step 8: Biceps to 0° (0.0 rad)
-                { joint: 'Biceps', value: 0, index: 1, rotateFunc: rotateBiceps }
-            ];
-
-            // Execute sequence step by step
-            executeArmSequenceStep(sequence, 0, iteration);
-        }
-
-        function executeArmSequenceStep(sequence, stepIndex, iteration) {
-            if (stepIndex >= sequence.length) {
-                // This iteration is complete
-                if (iteration < 4) {
-                    // Loop 4 more times (total 5)
-                    setTimeout(() => {
-                        executeArmMovementSequence(iteration + 1);
-                    }, 500); // Small delay between iterations
-                } else {
-                    // All iterations complete, reset arm
-                    console.log('✅ Arm Movement iterations complete, resetting arm...');
-                    resetArmAfterMovement();
-                }
-                return;
-            }
-
-            const movement = sequence[stepIndex];
-            console.log(`  Step ${stepIndex + 1}: Moving ${movement.joint} to ${movement.value}°`);
-
-            // Set target value
-            sliderAnimations[movement.index].targetValue = movement.value;
-
-            // Update slider visual position
-            if (activeSliders[movement.index]) {
-                if (movement.joint === 'Shoulder') {
-                    activeSliders[movement.index].value = -movement.value; // Invert for shoulder display
-                } else {
-                    activeSliders[movement.index].value = movement.value;
-                }
-            }
-
-            // Start animation
-            if (!sliderAnimations[movement.index].isAnimating) {
-                sliderAnimations[movement.index].isAnimating = true;
-                sliderAnimations[movement.index].lastTime = Date.now();
-
-                const displayElement = activeSliders[movement.index]?.parentElement?.querySelector('.slider-value-display');
-
-                // Map joint name for MQTT publication
-                const mqttJointMap = {
-                    'Elbow': 'Brryli',
-                    'Biceps': 'Biceps',
-                    'Shoulder': 'Krahu',
-                    'ShoulderBlade': 'Mbajtesi'
-                };
-
-                const mqttLabel = mqttJointMap[movement.joint] || movement.joint;
-
-                animateSliderToTarget(
-                    movement.index,
-                    activeSliders[movement.index],
-                    displayElement,
-                    movement.rotateFunc,
-                    mqttLabel
-                );
-            }
-
-            // Wait for movement to complete
-            const checkComplete = () => {
-                const anim = sliderAnimations[movement.index];
-                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
-                    // Move to next step after delay
-                    setTimeout(() => {
-                        executeArmSequenceStep(sequence, stepIndex + 1, iteration);
-                    }, 300); // Delay between steps
-                } else {
-                    setTimeout(checkComplete, 100);
-                }
-            };
-
-            setTimeout(checkComplete, 100);
-        }
-
-        function resetArmAfterMovement() {
-            console.log('Resetting arm to 0° position...');
-
-            // Reset all sliders to 0° using existing reset system
-            activeSliders.forEach((slider, index) => {
-                sliderAnimations[index].targetValue = 0;
-
-                if (!sliderAnimations[index].isAnimating) {
-                    const displayElement = slider.parentElement.querySelector('.slider-value-display');
-                    sliderAnimations[index].isAnimating = true;
-                    sliderAnimations[index].lastTime = Date.now();
-
-                    const rotateFunction = [rotateElbow, rotateBiceps, rotateShoulder, rotateShoulderBlade][index];
-                    const label = ['Elbow', 'Biceps', 'Shoulder', 'Shoulder Blade'][index];
-
-                    animateSliderToTarget(index, slider, displayElement, rotateFunction, label);
-                }
-            });
-
-            // Wait for reset to complete
-            const checkResetComplete = () => {
-                const allComplete = sliderAnimations.every(anim =>
-                    Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating
-                );
-
-                if (allComplete) {
-                    console.log('✅ Arm Movement sequence complete!');
-
-                    // Re-enable controls
-                    endMovementSequence();
-
-                    if (armMovementBtn) {
-                        armMovementBtn.disabled = false;
-                        armMovementBtn.textContent = 'Arm Movement';
-                    }
-                } else {
-                    setTimeout(checkResetComplete, 500);
-                }
-            };
-
-            setTimeout(checkResetComplete, 500);
-        }
-
-        // ============================================
-        // GRAB WATER BUTTON FUNCTIONALITY
-        // ============================================
-
-        const grabWaterBtn = document.getElementById('grabWaterBtn');
-        if (grabWaterBtn) {
-            grabWaterBtn.addEventListener('click', function () {
-                console.log('💧 Starting Grab Water sequence');
-
-                // Check if movement can start
-                if (!startMovementSequence('grabWater')) {
-                    return;
-                }
-
-                // Disable button during animation
-                grabWaterBtn.disabled = true;
-                grabWaterBtn.textContent = 'Grabbing...';
-
-                // Execute the complete Grab Water sequence
-                executeGrabWaterSequence();
-            });
-        }
-
-        function executeGrabWaterSequence() {
-            console.log('1. Starting grab sequence');
-
-            // Step 1: Elbow to 98.5°
-            moveJoint('Elbow', 98.5, 0, rotateElbow, function () {
-                // Step 2: Biceps to 25.3°
-                moveJoint('Biceps', 25.3, 1, rotateBiceps, function () {
-                    // Step 3: Elbow to 84.4°
-                    moveJoint('Elbow', 84.4, 0, rotateElbow, function () {
-                        // Step 4: Close all fingers and wait 3 seconds
-                        console.log('4. Closing all fingers');
-                        closeAllFingers(function () {
-                            setTimeout(function () {
-                                // Step 5: Elbow to 104.6°
-                                moveJoint('Elbow', 104.6, 0, rotateElbow, function () {
-                                    // Step 6: Biceps to -5°
-                                    moveJoint('Biceps', -5, 1, rotateBiceps, function () {
-                                        // Step 7: Elbow to 0°
-                                        moveJoint('Elbow', 0, 0, rotateElbow, function () {
-                                            // Wait 5 seconds
-                                            setTimeout(function () {
-                                                console.log('8. Starting pour sequence');
-                                                // Step 8: Elbow to 104.6°
-                                                moveJoint('Elbow', 104.6, 0, rotateElbow, function () {
-                                                    // Step 9: Biceps to 25.3°
-                                                    moveJoint('Biceps', 25.3, 1, rotateBiceps, function () {
-                                                        // Step 10: Elbow to 84.4°
-                                                        moveJoint('Elbow', 84.4, 0, rotateElbow, function () {
-                                                            // Step 11: Open fingers
-                                                            console.log('11. Opening fingers');
-                                                            openAllFingers(function () {
-                                                                // Step 12: Elbow to 104.6°
-                                                                moveJoint('Elbow', 104.6, 0, rotateElbow, function () {
-                                                                    // Step 13: Biceps to -5°
-                                                                    moveJoint('Biceps', -5, 1, rotateBiceps, function () {
-                                                                        // Step 14: Elbow to 0°
-                                                                        moveJoint('Elbow', 0, 0, rotateElbow, function () {
-                                                                            // Step 15: Biceps to 0° (final reset)
-                                                                            moveJoint('Biceps', 0, 1, rotateBiceps, function () {
-                                                                                // Sequence complete
-                                                                                console.log('✅ Grab Water sequence complete');
-                                                                                endMovementSequence();
-                                                                                if (grabWaterBtn) {
-                                                                                    grabWaterBtn.disabled = false;
-                                                                                    grabWaterBtn.textContent = 'Grab Water';
-                                                                                }
-                                                                            });
-                                                                        });
-                                                                    });
-                                                                });
-                                                            });
-                                                        });
-                                                    });
-                                                });
-                                            }, 5000); // Wait 5 seconds
-                                        });
-                                    });
-                                });
-                            }, 3000); // Wait 3 seconds with closed fingers
-                        });
-                    });
-                });
-            });
-        }
-
-        // Helper function to move a joint
-        function moveJoint(jointName, targetValue, sliderIndex, rotateFunction, callback) {
-            console.log(`  Moving ${jointName} to ${targetValue}°`);
-
-            // Set target value
-            sliderAnimations[sliderIndex].targetValue = targetValue;
-
-            // Update slider visual position
-            if (activeSliders[sliderIndex]) {
-                if (jointName === 'Shoulder') {
-                    activeSliders[sliderIndex].value = -targetValue; // Invert for shoulder
-                } else {
-                    activeSliders[sliderIndex].value = targetValue;
-                }
-            }
-
-            // Start animation
-            if (!sliderAnimations[sliderIndex].isAnimating) {
-                sliderAnimations[sliderIndex].isAnimating = true;
-                sliderAnimations[sliderIndex].lastTime = Date.now();
-
-                const displayElement = activeSliders[sliderIndex]?.parentElement?.querySelector('.slider-value-display');
-
-                // Map joint name for MQTT publication
-                const mqttJointMap = {
-                    'Elbow': '2',
-                    'Biceps': '5',
-                    'Shoulder': '3',
-                    'ShoulderBlade': '4'
-                };
-
-                const mqttLabel = mqttJointMap[jointName] || jointName;
-
-                animateSliderToTarget(
-                    sliderIndex,
-                    activeSliders[sliderIndex],
-                    displayElement,
-                    rotateFunction,
-                    mqttLabel
-                );
-            }
-
-            // Wait for completion
-            const checkComplete = () => {
-                const anim = sliderAnimations[sliderIndex];
-                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
-                    // Add small delay before next movement
-                    setTimeout(callback, 500);
-                } else {
-                    setTimeout(checkComplete, 100);
-                }
-            };
-
-            setTimeout(checkComplete, 100);
-        }
-
-        // Function to close all fingers
-        function closeAllFingers(callback) {
-            // Find the Close Fingers button and simulate click
-            const closeAllBtn = document.querySelector('.finger-btn');
-            let foundCloseBtn = null;
-
-            document.querySelectorAll('.finger-btn').forEach(btn => {
-                if (btn.textContent.trim() === 'Close Fingers') {
-                    foundCloseBtn = btn;
-                }
-            });
-
-            if (foundCloseBtn) {
-                foundCloseBtn.click();
-
-                // Also close individual fingers to ensure visual feedback
-                const individualFingerBtns = document.querySelectorAll('.individual-finger-btn');
-                individualFingerBtns.forEach(btn => {
-                    const text = btn.textContent.trim();
-                    if (text === 'Move Index' || text === 'Move Middle' ||
-                        text === 'Move Ring' || text === 'Move Pinky') {
-                        if (!btn.classList.contains('active')) {
-                            btn.click();
-                        }
-                    }
-                });
-            }
-
-            // Wait a moment for fingers to close
-            setTimeout(callback, 1000);
-        }
-
-        // Function to open all fingers
-        function openAllFingers(callback) {
-            // Find the Open Fingers button and simulate click
-            const openAllBtn = document.querySelector('.finger-btn');
-            let foundOpenBtn = null;
-
-            document.querySelectorAll('.finger-btn').forEach(btn => {
-                if (btn.textContent.trim() === 'Open Fingers') {
-                    foundOpenBtn = btn;
-                }
-            });
-
-            if (foundOpenBtn) {
-                foundOpenBtn.click();
-
-                // Also open individual fingers to ensure visual feedback
-                const individualFingerBtns = document.querySelectorAll('.individual-finger-btn');
-                individualFingerBtns.forEach(btn => {
-                    const text = btn.textContent.trim();
-                    if (text === 'Move Index' || text === 'Move Middle' ||
-                        text === 'Move Ring' || text === 'Move Pinky') {
-                        if (btn.classList.contains('active')) {
-                            btn.click();
-                        }
-                    }
-                });
-            }
-
-            // Wait a moment for fingers to open
-            setTimeout(callback, 1000);
-        }
-
-        // ============================================
-        // HELLO MOVEMENT BUTTON FUNCTIONALITY
-        // ============================================
-
-        const helloMovementBtn = document.getElementById('helloMovementBtn');
-        if (helloMovementBtn) {
-            helloMovementBtn.addEventListener('click', function () {
-                console.log('👋 Starting Hello Movement sequence');
-
-                // Check if movement can start
-                if (!startMovementSequence('hello')) {
-                    return;
-                }
-
-                // Disable button during animation
-                helloMovementBtn.disabled = true;
-                helloMovementBtn.textContent = 'Moving...';
-
-                // Execute the complete sequence
-                executeHelloSequence();
-            });
-        }
-
-        function executeHelloSequence() {
-            if (currentMovementType !== 'hello') {
-                console.warn('Hello movement interrupted');
-                return;
-            }
-            // STEP 1: Move to initial Hello position
-            console.log('1. Moving to initial Hello position');
-
-            const initialSequence = [
-                { joint: 'Elbow', value: 100, index: 0, rotateFunc: rotateElbow },
-                { joint: 'Shoulder', value: -79.6, index: 2, rotateFunc: rotateShoulder },
-                { joint: 'ShoulderBlade', value: 77.1, index: 3, rotateFunc: rotateShoulderBlade },
-                { joint: 'Biceps', value: -11.3, index: 1, rotateFunc: rotateBiceps },
-            ];
-
-            // Execute initial sequence
-            executeSequenceStep(initialSequence, 0, function () {
-                console.log('2. Starting wave motion (3 cycles)');
-                startWaveMotion(0);
-            });
-        }
-
-        function executeSequenceStep(sequence, stepIndex, callback) {
-            if (stepIndex >= sequence.length) {
-                if (callback) callback();
-                return;
-            }
-
-            const movement = sequence[stepIndex];
-            // console.log(`  Moving ${movement.joint} to ${movement.value}°`);
-
-            // Set target
-            sliderAnimations[movement.index].targetValue = movement.value;
-
-            // Update slider display
-            if (activeSliders[movement.index]) {
-                if (movement.joint === 'Shoulder') {
-                    activeSliders[movement.index].value = -movement.value; // Invert for shoulder
-                } else {
-                    activeSliders[movement.index].value = movement.value;
-                }
-            }
-
-            // Start animation
-            if (!sliderAnimations[movement.index].isAnimating) {
-                sliderAnimations[movement.index].isAnimating = true;
-                sliderAnimations[movement.index].lastTime = Date.now();
-
-                const displayElement = activeSliders[movement.index]?.parentElement?.querySelector('.slider-value-display');
-
-                animateSliderToTarget(
-                    movement.index,
-                    activeSliders[movement.index],
-                    displayElement,
-                    movement.rotateFunc,
-                    movement.joint
-                );
-            }
-
-            // Wait for completion
-            const checkComplete = () => {
-                const anim = sliderAnimations[movement.index];
-                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
-                    // Move to next step after delay
-                    setTimeout(() => {
-                        executeSequenceStep(sequence, stepIndex + 1, callback);
-                    }, 500);
-                } else {
-                    setTimeout(checkComplete, 100);
-                }
-            };
-
-            setTimeout(checkComplete, 100);
-        }
-
-        function startWaveMotion(waveCount) {
-            if (waveCount >= 3) {
-                // Done with waves, reset to initial wave position (80°)
-                // console.log('3. Resetting to wave start position (80°)');
-                resetToWaveStart(function () {
-                    // STEP 4: Reset entire arm to start position (0°)
-                    // console.log('4. Resetting entire arm to start position');
-                    resetArmToStart();
-                });
-                return;
-            }
-
-            // console.log(`  Wave ${waveCount + 1}: 80° -> 110°`);
-
-            // Move to 110°
-            sliderAnimations[0].targetValue = 110;
-            if (activeSliders[0]) activeSliders[0].value = 110;
-
-            if (!sliderAnimations[0].isAnimating) {
-                sliderAnimations[0].isAnimating = true;
-                sliderAnimations[0].lastTime = Date.now();
-
-                const displayElement = activeSliders[0]?.parentElement?.querySelector('.slider-value-display');
-                animateSliderToTarget(0, activeSliders[0], displayElement, rotateElbow, 'Elbow');
-            }
-
-            // Wait for 110°
-            const check110 = () => {
-                const anim = sliderAnimations[0];
-                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
-                    setTimeout(() => {
-                        console.log(`  Wave ${waveCount + 1}: 110° -> 80°`);
-
-                        // Move to 80°
-                        sliderAnimations[0].targetValue = 80;
-                        if (activeSliders[0]) activeSliders[0].value = 80;
-
-                        if (!sliderAnimations[0].isAnimating) {
-                            sliderAnimations[0].isAnimating = true;
-                            sliderAnimations[0].lastTime = Date.now();
-
-                            const displayElement = activeSliders[0]?.parentElement?.querySelector('.slider-value-display');
-                            animateSliderToTarget(0, activeSliders[0], displayElement, rotateElbow, 'Elbow');
-                        }
-
-                        // Wait for 80°
-                        const check80 = () => {
-                            const anim = sliderAnimations[0];
-                            if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
-                                // Next wave
-                                setTimeout(() => {
-                                    startWaveMotion(waveCount + 1);
-                                }, 300);
-                            } else {
-                                setTimeout(check80, 100);
-                            }
-                        };
-
-                        setTimeout(check80, 100);
-                    }, 300);
-                } else {
-                    setTimeout(check110, 100);
-                }
-            };
-
-            setTimeout(check110, 100);
-        }
-
-        function resetToWaveStart(callback) {
-            // Reset elbow to 80° (wave start position)
-            sliderAnimations[0].targetValue = 80;
-            if (activeSliders[0]) activeSliders[0].value = 80;
-
-            if (!sliderAnimations[0].isAnimating) {
-                sliderAnimations[0].isAnimating = true;
-                sliderAnimations[0].lastTime = Date.now();
-
-                const displayElement = activeSliders[0]?.parentElement?.querySelector('.slider-value-display');
-                animateSliderToTarget(0, activeSliders[0], displayElement, rotateElbow, 'Elbow');
-            }
-
-            const checkReset = () => {
-                const anim = sliderAnimations[0];
-                if (Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating) {
-                    setTimeout(callback, 500);
-                } else {
-                    setTimeout(checkReset, 100);
-                }
-            };
-
-            setTimeout(checkReset, 100);
-        }
-
-        function resetArmToStart() {
-            // Reset all sliders to 0° using existing reset system
-            activeSliders.forEach((slider, index) => {
-                sliderAnimations[index].targetValue = 0;
-
-                if (!sliderAnimations[index].isAnimating) {
-                    const displayElement = slider.parentElement.querySelector('.slider-value-display');
-                    sliderAnimations[index].isAnimating = true;
-                    sliderAnimations[index].lastTime = Date.now();
-
-                    const rotateFunction = [rotateElbow, rotateBiceps, rotateShoulder, rotateShoulderBlade][index];
-                    const label = ['Elbow', 'Biceps', 'Shoulder', 'Shoulder Blade'][index];
-
-                    animateSliderToTarget(index, slider, displayElement, rotateFunction, label);
-                }
-            });
-
-            // Wait for all to complete
-            const checkAllComplete = () => {
-                const allComplete = sliderAnimations.every(anim =>
-                    Math.abs(anim.targetValue - anim.currentValue) <= 0.1 || !anim.isAnimating
-                );
-
-                if (allComplete) {
-                    console.log('✅ Hello Movement sequence complete');
-
-                    // Release movement lock and re-enable controls
-                    endMovementSequence();
-
-                    if (helloMovementBtn) {
-                        helloMovementBtn.disabled = false;
-                        helloMovementBtn.textContent = 'Hello Movement';
-                    }
-                } else {
-                    setTimeout(checkAllComplete, 500);
-                }
-            };
-
-            setTimeout(checkAllComplete, 500);
-        }
 
         function animate() {
             requestAnimationFrame(animate);
