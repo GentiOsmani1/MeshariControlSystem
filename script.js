@@ -37,7 +37,7 @@ let fingerMeshes = {
 
 // Replace these with YOUR HiveMQ Cloud credentials
 const MQTT_CONFIG = {
-    // host: 'wss://broker.hivemq.com:8884/mqtt',
+    host: 'wss://broker.hivemq.com:8884/mqtt',
     options: {
         clientId: 'meshari_' + Math.random().toString(16).substr(2, 8),
         clean: true,
