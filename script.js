@@ -17,8 +17,6 @@ let fingerMeshes = {
 // ============================================
 // MQTT CONNECTION SETUP
 // ============================================
-
-// Replace these with YOUR HiveMQ Cloud credentials
 const MQTT_CONFIG = {
     host: 'wss://broker.hivemq.com:8884/mqtt',
     options: {
@@ -54,7 +52,6 @@ function connectMQTT() {
     } catch (error) {
         console.error('❌ Failed to initialize MQTT:', error.message || error);
         updateConnectionStatus(false);
-        // Continue script execution even if MQTT fails
     }
 }
 
